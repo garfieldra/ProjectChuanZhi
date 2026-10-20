@@ -8,13 +8,14 @@ import time
 from uuid import uuid4
 
 import httpx
+from api_client import api_client
 
 
 PROMPT = "推荐一些适合深夜写代码、克制但有节奏感的华语音乐。"
 
 
 def main() -> None:
-    with httpx.Client(base_url="http://127.0.0.1:8080", timeout=30) as client:
+    with api_client() as client:
         conversation_id = client.post("/api/v1/conversations").raise_for_status().json()["id"]
         queued = client.post(
             f"/api/v1/conversations/{conversation_id}/messages",

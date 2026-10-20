@@ -1,7 +1,10 @@
 package com.indiesoundquest.tournament.web;
 import com.indiesoundquest.redis.RateLimitExceededException;
+import com.indiesoundquest.identity.AccountService;
 import com.indiesoundquest.tournament.application.CandidatePoolContractException; import com.indiesoundquest.tournament.application.CandidatePoolUnavailableException; import com.indiesoundquest.tournament.application.IdempotencyKeyConflictException; import java.util.*; import org.springframework.http.*; import org.springframework.web.bind.MethodArgumentNotValidException; import org.springframework.web.bind.MissingRequestHeaderException; import org.springframework.web.bind.annotation.*;
 @RestControllerAdvice public class ApiExceptionHandler {
+ @ExceptionHandler(org.springframework.security.core.AuthenticationException.class) ResponseEntity<Map<String,Object>> authentication(){return error(HttpStatus.UNAUTHORIZED,"AUTHENTICATION_FAILED","邮箱或密码不正确");}
+ @ExceptionHandler(AccountService.DuplicateAccountException.class) ResponseEntity<Map<String,Object>> duplicateAccount(){return error(HttpStatus.CONFLICT,"ACCOUNT_ALREADY_EXISTS","这个邮箱已经注册，请直接登录");}
  @ExceptionHandler(NoSuchElementException.class) ResponseEntity<Map<String,Object>> notFound(){return error(HttpStatus.NOT_FOUND,"RESOURCE_NOT_FOUND","资源不存在或不可访问");}
  @ExceptionHandler(SecurityException.class) ResponseEntity<Map<String,Object>> forbidden(){return error(HttpStatus.FORBIDDEN,"TOURNAMENT_ACCESS_DENIED","赛事不可访问");}
  @ExceptionHandler(IllegalArgumentException.class) ResponseEntity<Map<String,Object>> invalidArgument(IllegalArgumentException e){return error(HttpStatus.BAD_REQUEST,"VALIDATION_FAILED",e.getMessage());}

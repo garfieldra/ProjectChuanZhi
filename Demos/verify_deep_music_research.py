@@ -9,6 +9,7 @@ import time
 from uuid import uuid4
 
 import httpx
+from api_client import api_client
 
 
 PROMPT = "请深入分析张悬《宝贝》的创作背景与制作语境，以及这些信息如何帮助理解它的演唱和编曲表达。请区分事实与解读。"
@@ -16,7 +17,7 @@ PROMPT = "请深入分析张悬《宝贝》的创作背景与制作语境，以�
 
 def main() -> None:
     base_url = os.getenv("ISQ_API_BASE_URL", "http://127.0.0.1:8080")
-    with httpx.Client(base_url=base_url, timeout=30) as client:
+    with api_client(base_url=base_url, timeout=30) as client:
         conversation_id = client.post("/api/v1/conversations").raise_for_status().json()["id"]
         queued = client.post(
             f"/api/v1/conversations/{conversation_id}/messages",

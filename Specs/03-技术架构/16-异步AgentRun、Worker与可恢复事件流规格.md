@@ -88,6 +88,7 @@ QUEUED -> RUNNING -> WAITING_FOR_USER -> QUEUED
 
 - Worker 消费消息后必须向 Java 申领租约；未获得租约时不执行。
 - 运行期每 10 秒续租，默认租约 30 秒。
+- 心跳使用独立于普通回写的短超时连接；短暂网络错误或服务端 5xx 必须记录安全摘要并快速重试，不能让心跳任务静默退出。收到失效租约的 409 等确定性拒绝时，Worker 停止后续结果回写，由租约恢复机制接管。
 - 每次回写都携带 `attemptNo + leaseToken`，Java 拒绝过期 Worker 的迟到结果（fencing token）。
 - 租约过期后 Run 可重新入队；同一时刻只有一个有效 Attempt。
 

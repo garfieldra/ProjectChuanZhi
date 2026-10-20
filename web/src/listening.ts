@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { apiFetch } from './apiClient'
 
 export type ListeningOptions = {
   recordingId: string
@@ -58,7 +59,7 @@ export function useListeningPreview() {
     if (cached) return cached
     const pending = pendingRef.current.get(recordingId)
     if (pending) return pending
-    const request = fetch(`/api/v1/recordings/${recordingId}/listening-options`, { credentials: 'include' })
+    const request = apiFetch(`/api/v1/recordings/${recordingId}/listening-options`)
       .then(async response => {
         if (!response.ok) throw new Error(`试听资源请求失败（${response.status}）`)
         const options = await response.json() as ListeningOptions

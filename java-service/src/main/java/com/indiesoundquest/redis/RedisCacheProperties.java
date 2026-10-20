@@ -49,6 +49,7 @@ public class RedisCacheProperties {
     private int conversationMessagePerMinute = 30;
     private int explorationReportPerMinute = 5;
     private int agentRunAnswerPerMinute = 20;
+    private int authPerMinute = 10;
 
     public int getTournamentCreatePerMinute() {
       return tournamentCreatePerMinute;
@@ -96,6 +97,14 @@ public class RedisCacheProperties {
 
     public void setAgentRunAnswerPerMinute(int agentRunAnswerPerMinute) {
       this.agentRunAnswerPerMinute = agentRunAnswerPerMinute;
+    }
+
+    public int getAuthPerMinute() {
+      return authPerMinute;
+    }
+
+    public void setAuthPerMinute(int authPerMinute) {
+      this.authPerMinute = authPerMinute;
     }
   }
 }

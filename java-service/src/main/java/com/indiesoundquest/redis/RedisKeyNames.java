@@ -23,6 +23,10 @@ public final class RedisKeyNames {
   }
 
   public static String rateLimit(UUID guestId, String operation, long windowBucket) {
-    return RATE_LIMIT_PREFIX + guestId + ":" + operation + ":" + windowBucket;
+    return rateLimit(guestId.toString(), operation, windowBucket);
+  }
+
+  public static String rateLimit(String identity, String operation, long windowBucket) {
+    return RATE_LIMIT_PREFIX + identity + ":" + operation + ":" + windowBucket;
   }
 }

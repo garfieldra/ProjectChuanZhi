@@ -1,0 +1,6 @@
+{"caseId":"song-impression","category":"single-song","prompts":["五月天的《拥抱》是一首什么样的歌曲？请结合音乐表达和时代语境具体分析。"],"expectedCard":"MUSIC_ANALYSIS","subjectContains":"拥抱"}
+{"caseId":"creative-context","category":"fact-heavy","prompts":["请深入分析张悬《宝贝》的创作背景与制作语境，区分可验证事实和你的听感解读。"],"expectedCard":"MUSIC_ANALYSIS","subjectContains":"宝贝","requiresFullText":true}
+{"caseId":"comparison","category":"comparison","prompts":["比较五月天《拥抱》与张悬《宝贝》的叙事视角和演唱距离感，资料不足时明确说明。"],"expectedCard":"MUSIC_ANALYSIS"}
+{"caseId":"follow-up","category":"multi-turn","prompts":["为什么张悬《宝贝》听起来很亲密？请具体分析。","继续刚才这首歌：与现场版本比较，哪些判断有资料支持，哪些只是听感？"],"expectedCard":"MUSIC_ANALYSIS","subjectContains":"宝贝","expectRefinement":true}
+{"caseId":"uncertain-song","category":"uncertainty","prompts":["深入分析一首叫《不存在的霓虹海岸》的歌的创作背景；如果找不到可靠的艺人和版本，不要编造事实。"],"allowNoCard":true}
+{"caseId":"recommendation-boundary","category":"routing","prompts":["推荐三首与张悬《宝贝》气质相近但不同艺人的歌曲。"],"expectedCard":"MUSIC_RECOMMENDATIONS","expectedSongCount":3,"excludedArtistMbids":["d7dd2cd8-db65-4dc1-897b-957548393cf5"]}

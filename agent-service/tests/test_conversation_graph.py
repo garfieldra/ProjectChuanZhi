@@ -1,3 +1,4 @@
+import asyncio
 from uuid import uuid4
 from types import SimpleNamespace
 
@@ -10,11 +11,14 @@ from app.conversation_graph import (
     RecommendedArtistDraft,
     RecommendedSongDraft,
     _assess_research,
+    _analysis_stagnated,
     _diverse_song_order,
     _draft_named_artist_coverage,
     _explicit_artist_mentions,
     _fallback_preference_profile,
     _next_analysis_query,
+    _reference_artists_for_exclusion,
+    _requested_song_count,
     _recommendation_search_queries,
     _review_overcompressed,
     _select_evidence_backed_recording,
@@ -52,6 +56,22 @@ class FakePlainJsonFallbackModel:
          "claims":[{"statement":"公开资料只支持当前这项有限结论，不能外推更多幕后事实。","claim_type":"INTERPRETATION","dimension":"证据边界","evidence_refs":[],"confidence":"low","boundary":"仅用于验证 JSON 回退。","status":"partial"}],
          "uncertainties":[],"related_works":[]}
         ```'''.replace("深度分析正文。", "深度分析正文。" * 30))
+
+
+class FakeRecommendationJsonFallbackModel:
+    def with_structured_output(self, _schema, **_kwargs):
+        return _FailingStructuredCall()
+
+    async def ainvoke(self, _prompt):
+        return SimpleNamespace(content='''{"summary":"基于给定公开资料提供可以核验的音乐推荐。",
+        "songs":[{"title":"测试歌曲","artist_name":"测试艺人","reason":"这首歌与用户描述的声音方向有具体相似性。",
+        "source_url":"https://example.com/music"}],"artists":[]}''')
+
+
+def test_recommendation_anchor_and_requested_count_are_not_treated_as_generic_preference():
+    text = "推荐三首与张悬《宝贝》气质相近但不同艺人的歌曲。"
+    assert _requested_song_count(text) == 3
+    assert _reference_artists_for_exclusion(text, ["三首与张悬《宝贝》气质相近但不同艺人", "张悬"]) == ["张悬"]
 
 
 def test_multi_artist_recommendation_builds_one_parallel_search_per_explicit_artist():
@@ -466,6 +486,17 @@ async def test_recommendation_tool_verifies_songs_and_builds_persistable_card():
 
 
 @pytest.mark.asyncio
+async def test_recommendation_uses_validated_json_when_function_calling_fails():
+    runtime = ConversationReActRuntime(FakeWeb(), FakeKnowledge(), catalog=FakeRecommendationCatalog())
+    runtime.model = FakeRecommendationJsonFallbackModel()
+    request = _analysis_request("推荐适合夜晚散步的华语歌曲")
+    result = await runtime.recommend_music(request, await FakeWeb().search("test"))
+    assert result.card_intent is not None
+    assert result.card_intent.card_type == "MUSIC_RECOMMENDATIONS"
+    assert result.card_intent.payload["songs"][0]["title"] == "测试歌曲"
+
+
+@pytest.mark.asyncio
 async def test_explicit_recommendation_routes_to_card_tool_after_web_evidence():
     runtime = ConversationReActRuntime(FakeWeb(), FakeKnowledge())
     runtime.model = FakeRespondingRouter()
@@ -534,6 +565,20 @@ async def test_musicbrainz_no_gain_loop_is_replanned_instead_of_repeated():
     })
     assert decision.action == "search_web"
     assert decision.query == "宝贝 创作背景 采访"
+
+
+@pytest.mark.asyncio
+async def test_lastfm_no_gain_recommendation_switches_to_web_instead_of_memory_only_answer():
+    runtime = ConversationReActRuntime(FakeWeb(), FakeKnowledge())
+    runtime.model = FakeUnavailableLastFmRouter()
+    runtime.lastfm = SimpleNamespace(enabled=True)
+    request = _analysis_request("推荐三首与张悬《宝贝》相近的歌曲。")
+    decision = await runtime.decide({
+        "request": request, "action_history": [{"action": "search_lastfm"}],
+        "observations": [{"action": "search_lastfm", "newOutputCount": 0}],
+        "web_sources": [], "knowledge": [], "iteration": 1, "search_attempts": 0,
+    })
+    assert decision.action == "search_web"
 
 
 @pytest.mark.asyncio
@@ -796,6 +841,105 @@ def test_creation_background_requires_full_text_and_independent_source_coverage(
     assert deep.full_text_source_count == 1
     assert deep.independent_domain_count == 2
     assert deep.ready_for_fact_heavy_answer is True
+
+
+def test_descriptive_analysis_missing_optional_dimension_is_not_a_hard_blocker():
+    request = _analysis_request("五月天的《拥抱》是一首什么样的歌曲？")
+    workspace = initial_analysis_workspace(request)
+    workspace.selected_dimensions = ["歌词与叙事", "编曲与音色"]
+    coverage = assess_analysis_evidence(workspace, [{
+        "sourceUrl": "https://example.com/song", "sourceTitle": "五月天《拥抱》作品资料",
+        "summary": "作品介绍与歌词主题讨论。",
+    }])
+    assert coverage.requires_full_text is False
+    assert "编曲与音色" in coverage.missing_dimensions
+    assert coverage.blocking_gaps == []
+
+
+def test_analysis_stagnation_requires_two_consecutive_no_gain_actions():
+    first = {"action": "search_web", "newOutputCount": 2}
+    repeated = {"action": "search_web", "newOutputCount": 0}
+    failed_read = {"action": "read_source", "excerptCount": 0}
+    assert _analysis_stagnated({"observations": [first, repeated]}) is False
+    assert _analysis_stagnated({"observations": [first, repeated, failed_read]}) is True
+
+
+@pytest.mark.asyncio
+async def test_stagnated_analysis_skips_another_model_planning_call():
+    class NoMorePlanning:
+        def with_structured_output(self, *_args, **_kwargs):
+            raise AssertionError("stagnated research must not spend another model call")
+
+    runtime = ConversationReActRuntime(FakeWeb(), FakeKnowledge())
+    runtime.model = NoMorePlanning()
+    request = _analysis_request("五月天的《拥抱》是一首什么样的歌曲？")
+    decision = await runtime.decide({
+        "request": request,
+        "analysis_workspace": initial_analysis_workspace(request).model_dump(),
+        "web_sources": [{"sourceUrl": "https://example.com/song"}],
+        "observations": [
+            {"action": "search_web", "newOutputCount": 0},
+            {"action": "read_source", "excerptCount": 0},
+        ],
+    })
+    assert decision.action == "analyze_music"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fact_heavy,attempts,expected", [
+    (False, 2, "analyze_music"),
+    (True, 2, "search_web"),
+    (True, 3, "analyze_music"),
+])
+async def test_analysis_search_budget_adapts_to_fact_heavy_question(fact_heavy, attempts, expected):
+    class AlwaysSearchModel:
+        def with_structured_output(self, *_args, **_kwargs):
+            return self
+
+        async def ainvoke(self, _prompt):
+            return ConversationDecision(action="search_web", public_summary="继续搜索资料")
+
+    runtime = ConversationReActRuntime(FakeWeb(), FakeKnowledge())
+    runtime.model = AlwaysSearchModel()
+    request = _analysis_request("请分析《宝贝》的创作背景" if fact_heavy else "《宝贝》是一首什么样的歌？")
+    decision = await runtime.decide({
+        "request": request,
+        "analysis_workspace": initial_analysis_workspace(request).model_dump(),
+        "evidence_coverage": {"requires_full_text": fact_heavy, "blocking_gaps": []},
+        "web_sources": [{"sourceUrl": "https://example.com/song", "sourceTitle": "作品资料"}],
+        "action_history": [{"action": "search_web"}],
+        "observations": [{"action": "search_web", "newOutputCount": 1}],
+        "search_attempts": attempts,
+        "knowledge": [],
+    })
+    assert decision.action == expected
+
+
+@pytest.mark.asyncio
+async def test_analysis_preference_and_workspace_planning_start_concurrently():
+    runtime = ConversationReActRuntime(FakeWeb(), FakeKnowledge())
+    runtime.model = None
+    request = _analysis_request("五月天的《拥抱》是一首什么样的歌曲？")
+    profile_started = asyncio.Event()
+    workspace_started = asyncio.Event()
+
+    async def profile(_request):
+        profile_started.set()
+        await asyncio.wait_for(workspace_started.wait(), 1)
+        return _fallback_preference_profile(request, [])
+
+    async def workspace(_request):
+        workspace_started.set()
+        await asyncio.wait_for(profile_started.wait(), 1)
+        return initial_analysis_workspace(request)
+
+    runtime.analyze_preference = profile
+    runtime.plan_analysis_workspace = workspace
+    final = await asyncio.wait_for(runtime.graph.ainvoke(
+        {"request": request},
+        {"configurable": {"thread_id": str(request.request_id)}, "recursion_limit": 24},
+    ), 3)
+    assert final["result"].action == "analyze_music"
 
 
 @pytest.mark.asyncio

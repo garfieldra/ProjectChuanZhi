@@ -1,4 +1,5 @@
 import { type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react'
+import { apiFetch } from './apiClient'
 import { toPng } from 'html-to-image'
 import { deriveCandidateSelection, intentModeLabel, type ArtistChoice, type CandidateItem, type CandidatePoolResponse } from './candidatePool'
 import { playbackLabel, type PlaybackState, useListeningPreview } from './listening'
@@ -30,7 +31,7 @@ function agentErrorMessage(error: unknown, fallback: string) {
 }
 
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, { credentials: 'include', ...options })
+  const response = await apiFetch(`/api/v1${path}`, options)
   if (!response.ok) throw new Error(`请求失败（${response.status}）`)
   return response.json() as Promise<T>
 }

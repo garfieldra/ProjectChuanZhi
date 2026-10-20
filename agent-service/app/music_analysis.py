@@ -357,7 +357,7 @@ def assess_analysis_evidence(
     domains.discard(None)
     full_text_count = sum(1 for source in sources if len(str(source.get("pageExcerpt") or "").strip()) >= 120)
     requires_full_text = bool(re.search(
-        r"创作背景|创作过程|采访|幕后|制作人|编曲者|词曲作者|credits?|录音|混音|为什么写|怎么写",
+        r"创作背景|创作过程|创作语境|制作过程|制作语境|采访|幕后|制作人|编曲者|词曲作者|词曲署名|credits?|录音|混音|为什么写|怎么写",
         current.question,
         re.I,
     ))
@@ -366,7 +366,11 @@ def assess_analysis_evidence(
         blocking.append("尚未精读能够支持创作或制作事实的原始页面")
     if requires_full_text and len(domains) < 2:
         blocking.append("创作或制作事实尚缺少第二个独立来源")
-    if missing:
+    # A missing optional listening dimension is a research suggestion, not a
+    # hard blocker for an interpretive question. Otherwise every descriptive
+    # song question is driven through extra searches and page reads even when
+    # the Agent can already answer with an explicit evidence boundary.
+    if requires_full_text and missing:
         blocking.append("仍缺少与问题相关的证据维度：" + "、".join(missing))
 
     subject = current.subject[:120]

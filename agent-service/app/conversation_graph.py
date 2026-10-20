@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from typing import Literal, TypedDict
@@ -300,6 +301,11 @@ class ConversationReActRuntime:
         ambiguities = state.get("entity_ambiguities", [])
         if ambiguities and not any(item["action"] == "clarify" for item in state.get("action_history", [])):
             return _entity_clarification_decision(ambiguities)
+        if state.get("analysis_workspace") and state.get("web_sources") and _analysis_stagnated(state):
+            return ConversationDecision(
+                action="analyze_music",
+                public_summary="后续研究未增加有效证据，依据现有资料完成分析并说明边界",
+            )
         if self.model is None:
             return _fallback_decision(state)
         observation_summary = {
@@ -335,6 +341,7 @@ class ConversationReActRuntime:
 - search_knowledge：本地主题卡可以补充歌词主题或文化语境，但它不是歌曲发现主来源；
 - recommend_music：已有足够公开资料时，提取具体歌曲/艺人推荐，并通过 MusicBrainz 核验可核验的歌曲；这是普通探索 Tool，与世界杯无关；
 - analyze_music：当前问题需要解释、拆解、比较或论证，且已有资料足以在明确边界内形成深入回答。深度音乐分析是按需加载的 Skill，不是固定工作流；你应根据 analysisWorkspace 和 analysisEvidenceCoverage 自主决定搜索、精读、补充本地资料或停止。创作背景、采访、制作署名等事实型问题若仍有 blockingGaps，应优先补足最可能改变结论的缺口；
+- 研究效率：当已有来源能够回答核心问题时尽早选择 analyze_music；新增搜索必须针对会改变结论的具体缺口，不为凑来源数量而检索。描述性听感问题可以说明证据边界后作答；只有创作/制作等事实密集问题才需要额外精读和独立来源核对。连续无新增证据时停止研究，不重复同类查询；
 - clarify：仅当同名实体、互相冲突的硬约束或会显著改变结果的缺失信息必须由用户决定时使用。可安全推断并允许之后纠正的细节不得阻塞；选择此动作时填写一个最小 clarificationQuestion、简短 clarificationReason 和实际需要的 clarificationOptions（可以为空，禁止硬凑）；
 - propose_tournament：仅当用户明确说想玩歌曲世界杯、淘汰赛或两两对决，但尚未要求立即构建候选时，展示世界杯启动卡；
 - build_candidate_pool：用户明确要求开始/直接开赛/生成 16 或 32 首世界杯候选时，调用候选池复合 Tool；
@@ -357,7 +364,14 @@ class ConversationReActRuntime:
         except Exception:
             return _fallback_decision(state)
         analysis_mode = bool(state.get("analysis_workspace")) or deep_analysis_intent(request)
-        analysis_search_limit = 5
+        coverage = state.get("evidence_coverage", {})
+        fact_heavy = bool(coverage.get("requires_full_text"))
+        # These are upper safety budgets, not a prescribed tool sequence. The
+        # Agent may stop earlier whenever the evidence already answers the
+        # question. Fact-heavy creation/production claims get more room than
+        # descriptive listening questions.
+        analysis_search_limit = 3 if fact_heavy else 2
+        analysis_read_limit = 2 if fact_heavy else 1
         if decision.action == "search_lastfm" and not self.lastfm.enabled:
             return ConversationDecision(
                 action="search_web", public_summary="当前听众关系源未启用，改用公开音乐资料继续发现",
@@ -383,8 +397,14 @@ class ConversationReActRuntime:
                 )
             if analysis_mode:
                 return ConversationDecision(action="analyze_music", public_summary="当前研究源已无新增证据，在现有边界内完成分析")
+            if _recommendation_intent(request):
+                if not state.get("web_sources") and state.get("search_attempts", 0) < 3:
+                    return ConversationDecision(
+                        action="search_web", public_summary="当前来源没有可核验歌曲，改用公开音乐资料检索",
+                        query=_research_gap_query(request, state.get("research_assessment", {})),
+                    )
+                return ConversationDecision(action="recommend_music", public_summary="依据现有公开资料整理具体推荐")
             return ConversationDecision(action="respond", public_summary="当前研究源已无新增证据，整理已有结果")
-        coverage = state.get("evidence_coverage", {})
         read_refs = set(state.get("read_source_refs", []))
         source_refs = {f"S{index}" for index, _ in enumerate(state.get("web_sources", [])[:16], start=1)}
         unread_refs = sorted(source_refs - read_refs, key=lambda value: int(value[1:]))
@@ -393,7 +413,9 @@ class ConversationReActRuntime:
                 action="search_web", public_summary="先寻找可供精读的公开资料",
                 query=_next_analysis_query(state, request),
             )
-        if analysis_mode and decision.action == "read_source" and not unread_refs:
+        if analysis_mode and decision.action == "read_source" and (
+            not unread_refs or len(read_refs) >= analysis_read_limit
+        ):
             if coverage.get("blocking_gaps") and state.get("search_attempts", 0) < analysis_search_limit:
                 return ConversationDecision(
                     action="search_web", public_summary="现有页面仍未覆盖关键证据，调整检索切面",
@@ -423,7 +445,7 @@ class ConversationReActRuntime:
             return ConversationDecision(action="search_web", public_summary="先查找能够支持核心分析的公开资料", query=_next_analysis_query(state, request))
         if (
             decision.action == "analyze_music" and analysis_mode and coverage.get("blocking_gaps")
-            and unread_refs and len(read_refs) < 5
+            and unread_refs and len(read_refs) < analysis_read_limit
         ):
             return ConversationDecision(
                 action="read_source", source_ref=unread_refs[0],
@@ -663,7 +685,7 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
             "ref": item["ref"], "title": item["title"], "url": item["url"],
             "summary": (item["summary"] or item["excerpt"])[:240], "provider": item["provider"],
             "quality": item["quality"],
-        } for item in sources[:8]]
+        } for item in sources]
         payload = {
             "title": f"关于{workspace.subject[:80]}的深入分析",
             "subject": workspace.subject,
@@ -767,7 +789,17 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
     def _build(self):
         async def initialize(state: ConversationState):
             request = state["request"]
-            profile = await self.analyze_preference(request)
+            # Preference extraction and analysis-goal planning both depend
+            # only on the incoming request. Run them together; artist identity
+            # resolution still waits for the actual extracted mentions.
+            analysis_requested = deep_analysis_intent(request)
+            profile_task = self.analyze_preference(request)
+            workspace_task = self.plan_analysis_workspace(request) if analysis_requested else None
+            if workspace_task is not None:
+                profile, analysis_workspace = await asyncio.gather(profile_task, workspace_task)
+            else:
+                profile = await profile_task
+                analysis_workspace = None
             resolutions, ambiguities = await self.resolve_entities(profile.named_artists, request.confirmed_artists)
             history = [
                 {"action": "understand_preference", "summary": "结合本轮消息与会话上下文理解需求"},
@@ -778,11 +810,9 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
                     "action": "resolve_named_entities",
                     "summary": f"已核验 {len([item for item in resolutions if item.get('status') == 'RESOLVED'])} 个艺人身份；{len(ambiguities)} 项需要确认",
                 })
-            analysis_workspace = None
             initial_sources: list[dict] = []
             initial_coverage: dict = {}
-            if deep_analysis_intent(request):
-                analysis_workspace = await self.plan_analysis_workspace(request)
+            if analysis_workspace is not None:
                 initial_sources = inherited_analysis_sources(request)
                 coverage = assess_analysis_evidence(analysis_workspace, initial_sources)
                 analysis_workspace = workspace_with_coverage(analysis_workspace, coverage)
@@ -845,13 +875,15 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
                     "applied_intervention_sequence": applied_sequence,
                     "intervention_revision": revision, "iteration": iteration,
                 }
-            decision = await self.decide(effective_state)
-            max_iterations = 11 if workspace else 7
+            coverage = effective_state.get("evidence_coverage", {})
+            max_iterations = (7 if coverage.get("requires_full_text") else 5) if workspace else 7
             if iteration >= max_iterations:
                 decision = ConversationDecision(
                     action="analyze_music" if workspace else "respond",
                     public_summary="运行预算已满足，在当前证据边界内整理最终回应",
                 )
+            else:
+                decision = await self.decide(effective_state)
             return {
                 "request": request,
                 "analysis_workspace": workspace,
@@ -886,7 +918,12 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
                     new_sources = await self.web.search_many(queries)
                 else:
                     new_sources = await self.web.search(query, "conversation_research")
+                previous_urls = {str(item.get("sourceUrl") or "") for item in state.get("web_sources", [])}
                 sources = _merge_web_sources(state.get("web_sources", []), new_sources, prefer_incoming=state.get("search_attempts", 0) > 0)
+                new_count = len({
+                    str(item.get("sourceUrl")) for item in new_sources
+                    if item.get("sourceUrl") and str(item.get("sourceUrl")) not in previous_urls
+                })
                 research = _assess_research(request, state.get("preference_profile", {}), sources)
                 updates = {
                     "web_sources": sources,
@@ -894,7 +931,7 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
                     "search_attempts": state.get("search_attempts", 0) + 1,
                     "observations": state["observations"] + [{
                         "action": action, "status": "success", "outputCount": len(sources),
-                        "newOutputCount": len(new_sources), "queryCount": len(queries),
+                        "newOutputCount": new_count, "queryCount": len(queries),
                         "namedArtistCount": len(_explicit_artist_mentions(request.user_message)),
                         "missingArtists": research.get("missingArtists", []), "ready": research.get("ready", False),
                     }],
@@ -1305,11 +1342,10 @@ reason 要具体映射到结构化偏好中的声音、情绪、文本、场景�
         # Provider retries do not cover malformed tool arguments. Give the
         # model one bounded schema-repair attempt before degrading to a source
         # card, so a transient formatting miss does not erase recommendations.
-        structured_model = self.model.with_structured_output(MusicRecommendationDraft, method="function_calling")
         for attempt in range(2):
             try:
                 repair = "" if attempt == 0 else "\n上一次结果结构无效或过度集中于单一艺人。请缩短 reason，严格满足字段类型与 sourceUrl 原样复制要求，并重新检查用户明确列出的每位艺人及其对应查询来源。"
-                draft = await structured_model.ainvoke(prompt + repair)
+                draft = await self._invoke_validated(MusicRecommendationDraft, prompt + repair)
                 required_coverage = min(5, len(named_artists))
                 single_artist_song_shortfall = len(named_artists) == 1 and sum(
                     1 for item in draft.songs if _artist_key_covered(_music_key(named_artists[0]), {_music_key(item.artist_name)})
@@ -1377,7 +1413,26 @@ reason 要具体映射到结构化偏好中的声音、情绪、文本、场景�
             str(item.get("name") or "") for item in (entity_resolutions or [])
             if item.get("status") == "RESOLVED" and item.get("name")
         ))
-        verified_songs = await self._supplement_named_artist_tracks(canonical_artists or named_artists, verified_songs, sources)
+        different_artist_request = bool(re.search(r"不同艺人|其他艺人|别的艺人|不同歌手|其他歌手|别的歌手", request.user_message))
+        if different_artist_request:
+            reference_names = _reference_artists_for_exclusion(request.user_message, canonical_artists or named_artists)
+            excluded_mbids: set[str] = set()
+            if self.catalog is not None and reference_names:
+                try:
+                    for resolution in await self.catalog.resolve_artist_candidates(reference_names):
+                        candidates = resolution.get("candidates") or []
+                        if candidates and int(candidates[0].get("score") or 0) >= 95:
+                            excluded_mbids.add(str(candidates[0].get("mbid") or ""))
+                except Exception:
+                    pass
+            excluded_names = {_music_key(name) for name in reference_names}
+            verified_songs = [
+                item for item in verified_songs
+                if str(item.get("artistMbid") or "") not in excluded_mbids
+                and not _artist_key_covered(_music_key(str(item.get("artistName") or "")), excluded_names)
+            ]
+        else:
+            verified_songs = await self._supplement_named_artist_tracks(canonical_artists or named_artists, verified_songs, sources)
         artist_items = []
         for suggestion in artists:
             identity = verified_artists.get(_music_key(suggestion.artist_name), {})
@@ -1394,14 +1449,13 @@ reason 要具体映射到结构化偏好中的声音、情绪、文本、场景�
                 trace_summary={"webSourceCount": len(sources), "verifiedSongCount": 0, "unresolvedSongCount": len(songs)},
             )
         verified_songs = _diverse_song_order(list({item["recordingId"]: item for item in verified_songs}.values()))
-        visible_song_count = min(7, len(verified_songs))
-        final_summary = (
-            f"已从公开资料候选中核验并展示 {visible_song_count} 首歌曲。{draft.summary}"
-            if visible_song_count else draft.summary
-        )
+        requested_count = _requested_song_count(request.user_message)
+        visible_song_count = min(requested_count or 7, len(verified_songs))
+        count_note = f"本轮只找到 {visible_song_count} 首符合条件且通过身份核验的歌曲，少于你要的 {requested_count} 首。" if requested_count and visible_song_count < requested_count else f"本轮已核验并展示 {visible_song_count} 首歌曲。"
+        final_summary = count_note + " 风格相似性属于探索建议，不代表作品间存在经证实的创作关联。"
         payload = {
             "title": "这轮音乐探索的推荐方向", "summary": final_summary,
-            "songs": verified_songs[:7], "artists": artist_items[:3],
+            "songs": verified_songs[:visible_song_count], "artists": artist_items[:3],
             "sources": _public_source_items(sources, limit=5),
             "preferenceProfile": preference_profile,
         }
@@ -1585,6 +1639,25 @@ def _recommendation_request(text: str) -> bool:
     return bool(re.search(r"推荐|相似|相近|类似|适合|歌单|听什么|探索方向|共同点", text, re.I))
 
 
+def _requested_song_count(text: str) -> int | None:
+    match = re.search(r"([1-7一二三四五六七两])\s*首(?:歌曲|歌|作品)?", text)
+    if not match:
+        return None
+    return {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7}.get(match.group(1), int(match.group(1)) if match.group(1).isdigit() else None)
+
+
+def _reference_artists_for_exclusion(text: str, named_artists: list[str]) -> list[str]:
+    # In “与张悬《宝贝》相近的其他艺人”, the artist before the song
+    # title is the comparison anchor, not a recommended artist.
+    anchors = re.findall(r"(?:与|和|同|像|比|如)([\u3400-\u9fffA-Za-z0-9]{2,12})《", text)
+    if anchors:
+        return list(dict.fromkeys(anchors))
+    return [
+        name for name in named_artists
+        if 1 < len(name) <= 8 and name in text and not re.search(r"\d|首|歌曲|推荐|相近|不同", name)
+    ][:4]
+
+
 def _explicit_artist_mentions(text: str) -> list[str]:
     """Best-effort literal extraction used only to guarantee search coverage.
 
@@ -1752,10 +1825,11 @@ def _recommendation_result_gaps(
         return ["具体歌曲结果"] if _recommendation_intent(request) else []
     songs = list(result.card_intent.payload.get("songs") or [])
     gaps: list[str] = []
-    if len(songs) < 3:
-        gaps.append("至少三首可核验歌曲")
+    requested_count = _requested_song_count(request.user_message)
+    if len(songs) < (requested_count or 3):
+        gaps.append(f"至少{requested_count or 3}首可核验歌曲")
     named = list(profile.get("named_artists") or profile.get("namedArtists") or [])
-    if len(named) > 1:
+    if len(named) > 1 and not re.search(r"不同艺人|其他艺人|别的艺人|不同歌手|其他歌手|别的歌手", request.user_message):
         expected_mbids = {
             str(item.get("mbid") or "") for item in (entity_resolutions or [])
             if item.get("status") == "RESOLVED" and item.get("mbid")
@@ -1967,6 +2041,23 @@ def _review_overcompressed(draft: str, revised: str) -> bool:
     draft_size = len(draft.strip())
     revised_size = len(revised.strip())
     return draft_size >= 600 and revised_size < max(320, int(draft_size * 0.65))
+
+
+def _analysis_stagnated(state: ConversationState) -> bool:
+    """Stop repeating research when two consecutive actions added no evidence."""
+    research = [
+        item for item in state.get("observations", [])
+        if item.get("action") in {
+            "search_web", "read_source", "research_musicbrainz", "search_wikimedia", "search_lastfm",
+        }
+    ]
+    if len(research) < 2:
+        return False
+    def gained(item: dict) -> bool:
+        if item.get("action") == "read_source":
+            return int(item.get("excerptCount") or 0) > 0
+        return int(item.get("newOutputCount") or 0) > 0
+    return not any(gained(item) for item in research[-2:])
 
 
 def _public_source_card(sources: list[dict]) -> ConversationCardIntent | None:

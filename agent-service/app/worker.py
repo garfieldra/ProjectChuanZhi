@@ -11,6 +11,7 @@ from .report_schemas import TournamentReportRequest
 from .schemas import ConversationAgentRequest, CandidatePoolRequest
 from .settings import settings
 from .public_stream import public_commentary as _public_commentary, response_chunks as _response_chunks
+from .lease_heartbeat import maintain_lease
 
 WORKER_ID = f"{socket.gethostname()}-{os.getpid()}"
 JAVA = settings.java_internal_base_url.rstrip("/")
@@ -95,11 +96,12 @@ async def execute(message: aio_pika.IncomingMessage):
                 await message.ack(); return
             claim.raise_for_status(); claim_body=claim.json(); lease=claim_body["leaseToken"]; attempt_no=claim_body["attemptNo"]
             stop = asyncio.Event()
-            async def heartbeat():
-                while not stop.is_set():
-                    await asyncio.sleep(10)
-                    if not stop.is_set(): await callback(client, run_id, "heartbeat", lease)
-            pulse = asyncio.create_task(heartbeat())
+            lease_lost = asyncio.Event()
+            heartbeat_client = httpx.AsyncClient(timeout=httpx.Timeout(8, connect=3))
+            pulse = asyncio.create_task(maintain_lease(
+                stop, lease_lost,
+                lambda: callback(heartbeat_client, run_id, "heartbeat", lease),
+            ))
             try:
                 run_type=task.get("runType","CONVERSATION")
                 if run_type in {"CONVERSATION", "EXPLORATION_REPORT"}:
@@ -139,6 +141,8 @@ async def execute(message: aio_pika.IncomingMessage):
                     config["configurable"]["intervention_provider"] = intervention_provider
                 result = None; last_action = None; last_plan = None; state = {}; observation_count = 0; tool_record_count = 0
                 async for state in runtime_graph.astream({"request": request}, config, stream_mode="values"):
+                    if lease_lost.is_set():
+                        raise RuntimeError("LEASE_LOST")
                     action = state.get("decision").action if state.get("decision") else None
                     if action and action != last_action:
                         last_action = action
@@ -175,6 +179,8 @@ async def execute(message: aio_pika.IncomingMessage):
                         if raw != last_plan:
                             last_plan = raw
                             await callback(client, run_id, "events", lease, {"type":"plan_updated","payloadJson":raw})
+                if lease_lost.is_set():
+                    raise RuntimeError("LEASE_LOST")
                 if state.get("error_code"):
                     raise RuntimeError(str(state["error_code"]))
                 if result is None: raise RuntimeError(f"{run_type.lower()} result missing")
@@ -213,7 +219,10 @@ async def execute(message: aio_pika.IncomingMessage):
                         await callback(client,run_id,"fail",lease,{"code":"AGENT_WORKER_FAILED","message":str(exc)[:300]})
                     await message.reject(requeue=False)
             finally:
-                stop.set(); pulse.cancel()
+                stop.set()
+                pulse.cancel()
+                await asyncio.gather(pulse, return_exceptions=True)
+                await heartbeat_client.aclose()
     except Exception:
         if not message.processed:
             await message.nack(requeue=True)

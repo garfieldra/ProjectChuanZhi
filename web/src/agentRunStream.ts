@@ -1,3 +1,5 @@
+import { apiFetch } from './apiClient'
+
 export type AgentRunEvent = { sequenceNumber: number; type: string; payloadJson: string; createdAt?: string }
 export type AgentRunPlan = { revision: number; goal: string; summary: string; changeSummary?: string; items: { id: string; title: string; status: 'pending' | 'running' | 'completed' | 'skipped' | 'blocked'; detail: string }[] }
 export type AgentRunProgress = { phase: string; status?: string; message: string; elapsedMs?: number; durationMs?: number; toolName?: string; kind?: string; metrics?: Record<string, number> }
@@ -41,7 +43,7 @@ export function progressMetricsText(value: AgentRunProgress): string {
 }
 
 export async function enqueueAgentRun(path: string, options: RequestInit): Promise<{ runId: string; eventsUrl?: string }> {
-  const response = await fetch(`/api/v1${path}`, { credentials: 'include', ...options })
+  const response = await apiFetch(`/api/v1${path}`, options)
   if (!response.ok) throw new Error(`请求失败（${response.status}）`)
   return response.json()
 }
@@ -84,7 +86,7 @@ export function followAgentRun<T>(runId: string, callbacks: Callbacks = {}, time
     const poll = async () => {
       try {
         while (!settled) {
-          const response = await fetch(`/api/v1/agent-runs/${runId}/events?afterSequence=${cursor}`, { credentials: 'include' })
+          const response = await apiFetch(`/api/v1/agent-runs/${runId}/events?afterSequence=${cursor}`)
           if (!response.ok) throw new Error(`请求失败（${response.status}）`)
           const snapshot = await response.json() as { runStatus: string; events: AgentRunEvent[] }
           snapshot.events.forEach(consume)

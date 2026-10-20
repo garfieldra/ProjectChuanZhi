@@ -9,6 +9,7 @@ import time
 from uuid import uuid4
 
 import httpx
+from api_client import api_client
 
 
 def wait_for_run(client: httpx.Client, run_id: str) -> tuple[str, list[dict]]:
@@ -44,7 +45,7 @@ def analysis_cards(client: httpx.Client, conversation_id: str) -> list[dict]:
 
 def main() -> None:
     base_url = os.getenv("ISQ_API_BASE_URL", "http://127.0.0.1:8080")
-    with httpx.Client(base_url=base_url, timeout=30) as client:
+    with api_client(base_url=base_url, timeout=30) as client:
         conversation_id = client.post("/api/v1/conversations").raise_for_status().json()["id"]
         first_run, _ = send(
             client, conversation_id,

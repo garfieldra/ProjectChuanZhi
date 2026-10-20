@@ -1,6 +1,10 @@
 package com.indiesoundquest.redis;
 
 import java.time.Duration;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.UUID;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -39,15 +43,32 @@ public class RedisRateLimitService {
     assertWithinLimit(guestId, "agent-run-answer", properties.getRateLimit().getAgentRunAnswerPerMinute());
   }
 
+  public void assertAuthAllowed(String callerIdentity) {
+    assertWithinLimit(hash(callerIdentity), "auth", properties.getRateLimit().getAuthPerMinute());
+  }
+
   private void assertWithinLimit(UUID guestId, String operation, int maxPerMinute) {
+    assertWithinLimit(guestId.toString(), operation, maxPerMinute);
+  }
+
+  private void assertWithinLimit(String identity, String operation, int maxPerMinute) {
     var windowBucket = System.currentTimeMillis() / Duration.ofMinutes(1).toMillis();
-    var key = RedisKeyNames.rateLimit(guestId, operation, windowBucket);
+    var key = RedisKeyNames.rateLimit(identity, operation, windowBucket);
     var count = redis.opsForValue().increment(key);
     if (count != null && count == 1L) {
       redis.expire(key, Duration.ofMinutes(2));
     }
     if (count != null && count > maxPerMinute) {
       throw new RateLimitExceededException(operation);
+    }
+  }
+
+
+  private String hash(String value) {
+    try {
+      return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+    } catch (NoSuchAlgorithmException impossible) {
+      throw new IllegalStateException(impossible);
     }
   }
 }

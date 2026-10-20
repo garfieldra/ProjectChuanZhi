@@ -8,6 +8,10 @@ COPY src ./src
 RUN --mount=type=cache,target=/root/.m2 \
     mvn -q -DskipTests -Dmaven.wagon.http.retryHandler.count=5 package
 
+FROM build AS test
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -q -Dmaven.wagon.http.retryHandler.count=5 test
+
 FROM eclipse-temurin:21-jre-jammy AS runtime
 WORKDIR /app
 COPY --from=build /workspace/target/java-service-0.1.0-SNAPSHOT.jar app.jar

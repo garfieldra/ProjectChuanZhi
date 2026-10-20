@@ -1,0 +1,23 @@
+package com.indiesoundquest.identity;
+
+import com.indiesoundquest.tournament.domain.GuestSession;
+import com.indiesoundquest.redis.RedisRateLimitService;
+import jakarta.servlet.http.*; import jakarta.validation.Valid; import jakarta.validation.constraints.*; import java.security.Principal;
+import org.springframework.beans.factory.ObjectProvider; import org.springframework.http.*; import org.springframework.security.authentication.*; import org.springframework.security.core.context.*; import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository; import org.springframework.security.web.context.HttpSessionSecurityContextRepository; import org.springframework.web.bind.annotation.*;
+
+@RestController @RequestMapping("/api/v1/auth")
+public class AuthController {
+  private final AccountService accounts; private final AuthenticationManager authentication; private final HttpSessionSecurityContextRepository contexts; private final RedisRateLimitService rateLimit; private final boolean githubEnabled;
+  public AuthController(AccountService accounts,AuthenticationManager authentication,HttpSessionSecurityContextRepository contexts,RedisRateLimitService rateLimit,ObjectProvider<ClientRegistrationRepository> clients){this.accounts=accounts;this.authentication=authentication;this.contexts=contexts;this.rateLimit=rateLimit;this.githubEnabled=clients.getIfAvailable()!=null;}
+  @GetMapping("/session") SessionView session(Principal principal){return principal==null||principal.getName().startsWith("guest:")?SessionView.guest(githubEnabled):accounts.current(principal.getName()).map(user->SessionView.account(user,githubEnabled)).orElseGet(()->SessionView.guest(githubEnabled));}
+  @PostMapping("/register") ResponseEntity<SessionView> register(@Valid @RequestBody Register body,HttpServletRequest request,HttpServletResponse response){ensureGuest();rateLimit.assertAuthAllowed(authIdentity(request,body.email()));var account=accounts.register(body.email(),body.password(),body.displayName(),guest(request));save(account,request,response);return ResponseEntity.status(HttpStatus.CREATED).body(SessionView.account(account,githubEnabled));}
+  @PostMapping("/login") SessionView login(@Valid @RequestBody Login body,HttpServletRequest request,HttpServletResponse response){ensureGuest();rateLimit.assertAuthAllowed(authIdentity(request,body.email()));var normalized=AccountService.normalize(body.email());authentication.authenticate(new UsernamePasswordAuthenticationToken(normalized,body.password()));var account=accounts.completePasswordLogin(normalized,guest(request));var session=request.getSession(false);if(session!=null)session.invalidate();save(account,request,response);return SessionView.account(account,githubEnabled);}
+  @PostMapping("/logout") SessionView logout(HttpServletRequest request,HttpServletResponse response){var session=request.getSession(false);if(session!=null)session.invalidate();SecurityContextHolder.clearContext();return SessionView.guest(githubEnabled);}
+  private void save(UserAccount account,HttpServletRequest request,HttpServletResponse response){request.getSession(true);request.changeSessionId();var principal=org.springframework.security.core.userdetails.User.withUsername(account.getEmailNormalized()).password("").roles("USER").build();var auth=new UsernamePasswordAuthenticationToken(principal,null,principal.getAuthorities());var context=SecurityContextHolder.createEmptyContext();context.setAuthentication(auth);SecurityContextHolder.setContext(context);contexts.saveContext(context,request,response);}
+  private GuestSession guest(HttpServletRequest request){return (GuestSession)request.getAttribute(GuestIdentityFilter.ATTRIBUTE);}
+  private void ensureGuest(){var current=SecurityContextHolder.getContext().getAuthentication();if(current!=null&&current.isAuthenticated()&&!current.getName().startsWith("guest:"))throw new IllegalStateException("请先退出当前账户");}
+  private String authIdentity(HttpServletRequest request,String email){return request.getRemoteAddr()+":"+AccountService.normalize(email);}
+  record Register(@Email @NotBlank @Size(max=320)String email,@NotBlank @Size(min=10,max=128)String password,@Size(max=80)String displayName){}
+  record Login(@Email @NotBlank @Size(max=320)String email,@NotBlank @Size(max=128)String password){}
+  record SessionView(boolean authenticated,String displayName,String email,String avatarUrl,boolean githubEnabled){static SessionView guest(boolean github){return new SessionView(false,null,null,null,github);}static SessionView account(UserAccount user,boolean github){return new SessionView(true,user.getDisplayName(),user.getEmailNormalized(),user.getAvatarUrl(),github);}}
+}

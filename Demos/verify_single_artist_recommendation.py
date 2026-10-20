@@ -8,13 +8,14 @@ import time
 from uuid import uuid4
 
 import httpx
+from api_client import api_client
 
 
 PROMPT = "给我推荐几首asen的歌曲。"
 
 
 def main() -> None:
-    with httpx.Client(base_url="http://127.0.0.1:8080", timeout=30) as client:
+    with api_client() as client:
         conversation = client.post("/api/v1/conversations")
         conversation.raise_for_status()
         conversation_id = conversation.json()["id"]

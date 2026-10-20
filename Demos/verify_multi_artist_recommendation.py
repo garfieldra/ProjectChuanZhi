@@ -9,13 +9,14 @@ from collections import Counter
 from uuid import uuid4
 
 import httpx
+from api_client import api_client
 
 
 PROMPT = "我最喜欢安溥、张悬、徐佳莹、郑宜农、艾怡良、TizzyBac等歌手，根据我的偏好进行分析，推荐一些我可能喜欢的音乐。"
 
 
 def main() -> None:
-    with httpx.Client(base_url="http://127.0.0.1:8080", timeout=30) as client:
+    with api_client() as client:
         conversation = client.post("/api/v1/conversations")
         conversation.raise_for_status()
         conversation_id = conversation.json()["id"]
