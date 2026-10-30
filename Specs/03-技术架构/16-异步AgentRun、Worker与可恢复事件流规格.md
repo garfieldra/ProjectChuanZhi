@@ -4,7 +4,7 @@
 
 > 2026-09-08 实施记录：统一对话、候选池、赛后报告和非赛事探索报告均已完成 `202 + runId`、事务 Outbox、统一 RabbitMQ Python Worker、Attempt 租约/心跳、最多三次自动重试、租约过期接管、publisher confirm、Agent DLQ、事件重放、并发幂等与 Micrometer 指标。`tournament_preference_report` 仅保存报告业务制品，执行状态统一由 `AgentRun` 控制面管理。前端采用“提交任务 -> EventSource 订阅持久事件 -> 读取业务制品”，SSE 为主协议，REST 增量读取仅作断线降级；旧报告专用消费者和队列已经移除。
 
-> 同日验收：实际 DeepSeek + MusicBrainz 候选任务生成 32 条可核验结果（16 主池 + 16 补位），随后完成 15 次投票与统一 AgentRun 赛后报告生成。人工停止报告 Worker 后，租约过期任务自动从 `RUNNING` 恢复为 `QUEUED`，Worker 重启后以第 2 次 Attempt 完成，最终只有一份 READY 报告和一个 RESULT 事件。升级 SSE 主协议后再次完成普通对话、候选池、赛后报告、非赛事探索报告四类真实验收；`afterSequence` 与 `Last-Event-ID` 均能准确续传。Python 29 项、Java 20 项、Web 21 项测试通过；Prometheus 已成功抓取 Java 与 RabbitMQ，Grafana 已自动装载 `IndieSoundQuest Agent Control Plane` 看板。
+> 同日验收：实际 DeepSeek + MusicBrainz 候选任务生成 32 条可核验结果（16 主池 + 16 补位），随后完成 15 次投票与统一 AgentRun 赛后报告生成。人工停止报告 Worker 后，租约过期任务自动从 `RUNNING` 恢复为 `QUEUED`，Worker 重启后以第 2 次 Attempt 完成，最终只有一份 READY 报告和一个 RESULT 事件。升级 SSE 主协议后再次完成普通对话、候选池、赛后报告、非赛事探索报告四类真实验收；`afterSequence` 与 `Last-Event-ID` 均能准确续传。Python 29 项、Java 20 项、Web 21 项测试通过；Prometheus 已成功抓取 Java 与 RabbitMQ，Grafana 已自动装载 `SoundSeek Agent Control Plane` 看板。
 
 ## 1. 目标
 
@@ -101,7 +101,7 @@ QUEUED -> RUNNING -> WAITING_FOR_USER -> QUEUED
 - 投递语义为 at-least-once；通过租约和幂等回写实现业务上 exactly-once effect。
 - 重试使用指数退避加抖动；超过上限进入 DLQ，同时将 Run 标记为可解释的 `FAILED`。
 
-当前首版使用统一耐久队列 `isq.agent-runs.v1`，由消息中的 `runType` 分派到相应 ReAct 图。达到需要独立扩缩容的流量后，再按以下负载类别拆分路由，不能在缺少容量数据时预先复制执行控制面：
+当前首版使用统一耐久队列 `soundseek.agent-runs.v1`，由消息中的 `runType` 分派到相应 ReAct 图。达到需要独立扩缩容的流量后，再按以下负载类别拆分路由，不能在缺少容量数据时预先复制执行控制面：
 
 - `agent.conversation`：普通对话，优先级高。
 - `agent.discovery`：候选池与多源搜索。

@@ -20,9 +20,9 @@ from .settings import settings
 from .tools import DomesticContentResearchTool, KnowledgeSearchTool, LastFmResearchTool, MusicCatalogTool, SpotifyCatalogTool, TournamentFactsTool, WebSearchTool, WikimediaResearchTool
 from .registry import skill_registry, tool_registry
 
-app = FastAPI(title="IndieSoundQuest Agent Service", version="0.1.0")
+app = FastAPI(title="SoundSeek Agent Service", version="0.1.0")
 if os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT"):
-    provider = TracerProvider(resource=Resource.create({"service.name": "indiesoundquest-agent"}))
+    provider = TracerProvider(resource=Resource.create({"service.name": "soundseek-agent"}))
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
     trace.set_tracer_provider(provider)
 FastAPIInstrumentor.instrument_app(app)

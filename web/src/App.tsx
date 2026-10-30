@@ -53,10 +53,10 @@ async function createAndWaitForReport(tournamentId: string, force: boolean, onPr
 }
 
 export function App({ embedded = false, onExit }: { embedded?: boolean; onExit?: () => void }) {
-  const conversationLaunch = sessionStorage.getItem('isq-worldcup-preference')
-  const conversationLaunchSize = sessionStorage.getItem('isq-worldcup-size') === '32' ? 32 : 16
-  const conversationId = sessionStorage.getItem('isq-conversation-id')
-  const existingTournamentId = sessionStorage.getItem('isq-open-tournament-id')
+  const conversationLaunch = sessionStorage.getItem('soundseek-worldcup-preference')
+  const conversationLaunchSize = sessionStorage.getItem('soundseek-worldcup-size') === '32' ? 32 : 16
+  const conversationId = sessionStorage.getItem('soundseek-conversation-id')
+  const existingTournamentId = sessionStorage.getItem('soundseek-open-tournament-id')
   const [artists, setArtists] = useState<Artist[]>([])
   const [artistId, setArtistId] = useState('')
   const [seedArtistId, setSeedArtistId] = useState('')
@@ -91,11 +91,11 @@ export function App({ embedded = false, onExit }: { embedded?: boolean; onExit?:
   }
 
   useEffect(() => { void loadArtists() }, [])
-  useEffect(() => { if (!loading && existingTournamentId) { sessionStorage.removeItem('isq-open-tournament-id'); void refresh(existingTournamentId) } }, [loading])
+  useEffect(() => { if (!loading && existingTournamentId) { sessionStorage.removeItem('soundseek-open-tournament-id'); void refresh(existingTournamentId) } }, [loading])
   useEffect(() => {
     if (!loading && launchPending.current && preferenceText.trim().length >= 3) {
       launchPending.current = false
-      sessionStorage.removeItem('isq-worldcup-preference'); sessionStorage.removeItem('isq-worldcup-size')
+      sessionStorage.removeItem('soundseek-worldcup-preference'); sessionStorage.removeItem('soundseek-worldcup-size')
       void generateCandidates()
     }
   }, [loading])
@@ -209,7 +209,7 @@ export function App({ embedded = false, onExit }: { embedded?: boolean; onExit?:
     ? <AgentRunFeedback plan={agentPlan} items={agentProgress} collapsed={progressCollapsed} onToggle={() => setProgressCollapsed(value => !value)} />
     : null
   return <main className={`app-shell ${embedded ? 'conversation-worldcup' : ''}`}>
-    {!embedded && <header><p className="eyebrow">IndieSoundQuest</p><h1>把喜欢，投进一场歌的世界杯。</h1><p className="subtitle">一对一选择，最后留下真正属于你的冠军歌曲。</p></header>}
+    {!embedded && <header><p className="eyebrow">寻声 SoundSeek</p><h1>把喜欢，投进一场歌的世界杯。</h1><p className="subtitle">一对一选择，最后留下真正属于你的冠军歌曲。</p></header>}
     {embedded && <header className="conversation-worldcup-header"><div><p className="eyebrow">歌曲世界杯</p><h2>这一轮，留下你更想听见的声音。</h2></div><button className="text-action" onClick={onExit}>回到对话</button></header>}
     {message && <p className="notice">{message}</p>}
     {!tournament && <section className="panel setup">
@@ -285,7 +285,7 @@ function AgentPlanPanel({ plan, collapsed, onToggle }: { plan: AgentPlan; collap
 function CandidateCard({ item, playback, onPreview, onPrefetch, onRemove, removeDisabled }: { item: CandidateItem; playback: PlaybackState; onPreview: () => void; onPrefetch: () => void; onRemove: () => void; removeDisabled: boolean }) {
   return <article className="candidate-card">
     <button className="candidate-preview" onClick={onPreview} onMouseEnter={onPrefetch} onFocus={onPrefetch} aria-label={`试听 ${item.artistName}的${item.title}`}>
-      {item.coverUrl ? <img src={item.coverUrl} alt={`${item.albumTitle || item.title} 封面`}/> : <div className="cover-placeholder" aria-label="暂无封面">ISQ</div>}
+      {item.coverUrl ? <img src={item.coverUrl} alt={`${item.albumTitle || item.title} 封面`}/> : <div className="cover-placeholder" aria-label="暂无封面">寻声</div>}
       <strong>{item.title}</strong>
       <small>{item.artistName}{item.albumTitle ? ` · ${item.albumTitle}` : ''}</small>
       {item.catalogSource === 'EXTERNAL_VERIFIED' && <span className="verification-badge">已补充核验歌曲</span>}
@@ -313,7 +313,7 @@ function ArtistClarificationView({ clarifications, loading, feedback, onConfirm,
 function SongCard({ entry, playback, onPreview, onPrefetch, onVote, disabled }: { entry: Entry; playback: PlaybackState; onPreview: () => void; onPrefetch: () => void; onVote: () => void; disabled: boolean }) {
   return <article className="song-card">
     <button className="song-preview" onClick={onPreview} onMouseEnter={onPrefetch} onFocus={onPrefetch} aria-label={`试听 ${entry.artistName}的${entry.title}`}>
-      {entry.coverUrl ? <img src={entry.coverUrl} alt={`${entry.albumTitle ?? entry.title} 封面`}/> : <div className="cover-placeholder" aria-label="暂无封面">ISQ</div>}
+      {entry.coverUrl ? <img src={entry.coverUrl} alt={`${entry.albumTitle ?? entry.title} 封面`}/> : <div className="cover-placeholder" aria-label="暂无封面">寻声</div>}
       <span>{entry.title}</span><small>{entry.artistName}</small>
       <span className={`playback-state ${playback.phase}`}>{playbackLabel(playback.phase)}</span>
     </button>
@@ -342,7 +342,7 @@ function ReportView({ report, tournament, onRetry, loading }: { report: Report; 
     catch { alert('长图生成失败，请稍后重试。') }
     finally { setExporting(false) }
   }
-  function download() { if (!previewUrl) return; const link = document.createElement('a'); link.href = previewUrl; link.download = `indie-sound-quest-report-${report.version}.png`; link.click() }
+  function download() { if (!previewUrl) return; const link = document.createElement('a'); link.href = previewUrl; link.download = `soundseek-report-${report.version}.png`; link.click() }
   if (report.status === 'PENDING' || report.status === 'RUNNING') return <div className="report-state"><span className="eyebrow">偏好报告</span><p>正在整理你的选择轨迹、偏好信号和探索方向…</p></div>
   if (report.status === 'FAILED') return <div className="report-state"><span className="eyebrow">生成未完成</span><p>{report.failureMessage || '这次分析没有完成，可以稍后重试。'}</p><button className="secondary" disabled={loading} onClick={onRetry}>重试</button></div>
   if (!report.report) return null
@@ -351,7 +351,7 @@ function ReportView({ report, tournament, onRetry, loading }: { report: Report; 
 
 function ReportExport({ report, champion, tournament, exportRef }: { report: Report; champion?: Entry; tournament: Tournament; exportRef: RefObject<HTMLElement> }) {
   if (!report.report) return null
-  return <article className="report-export" ref={exportRef} aria-hidden="true"><p className="eyebrow">本场冠军 · {tournament.size} 首歌曲世界杯</p><section className="export-champion">{champion?.coverUrl ? <img src={champion.coverUrl} alt=""/> : <div className="export-disc">ISQ</div>}<div><h1>{champion?.title || '本场冠军'}</h1><p>{champion?.artistName || 'IndieSoundQuest'}</p></div></section><p className="eyebrow">偏好报告 · 第 {report.version} 版</p><p className="export-summary">{report.report.summary}</p>{report.report.explorationTags?.length ? <p className="export-tags">探索依据 · {report.report.explorationTags.join(' · ')}</p> : null}<div className="export-dimensions">{report.report.dimensions.map(item => <section key={item.name}><strong>{item.name}</strong><p>{item.explanation}</p></section>)}</div>{report.report.choiceTrajectory?.length ? <><h2>你的选择轨迹</h2>{report.report.choiceTrajectory.map(item => <p className="export-item" key={item.matchId}><strong>《{item.winnerTitle}》</strong> · {item.winnerArtistName}<br/><small>胜出于《{item.loserTitle}》· {item.loserArtistName}｜{item.derivedNote}</small></p>)}</> : null}<h2>继续听听</h2>{report.report.songRecommendations.map((item, index) => <p className="export-item" key={item.recordingId || index}><strong>{item.title}</strong> {item.artistName && `· ${item.artistName}`}<br/><small>{item.reason}{item.sourceStatus === 'web_discovered' ? `｜网络发现 · 待核验｜${item.sourceTitle || '来源资料'}｜请以音乐平台搜索结果为准` : ''}</small></p>)}<blockquote>{report.report.personalityEasterEgg}</blockquote><p className="export-disclaimer">{report.report.disclaimer}</p><footer>IndieSoundQuest</footer></article>
+  return <article className="report-export" ref={exportRef} aria-hidden="true"><p className="eyebrow">本场冠军 · {tournament.size} 首歌曲世界杯</p><section className="export-champion">{champion?.coverUrl ? <img src={champion.coverUrl} alt=""/> : <div className="export-disc">寻声</div>}<div><h1>{champion?.title || '本场冠军'}</h1><p>{champion?.artistName || '寻声 SoundSeek'}</p></div></section><p className="eyebrow">偏好报告 · 第 {report.version} 版</p><p className="export-summary">{report.report.summary}</p>{report.report.explorationTags?.length ? <p className="export-tags">探索依据 · {report.report.explorationTags.join(' · ')}</p> : null}<div className="export-dimensions">{report.report.dimensions.map(item => <section key={item.name}><strong>{item.name}</strong><p>{item.explanation}</p></section>)}</div>{report.report.choiceTrajectory?.length ? <><h2>你的选择轨迹</h2>{report.report.choiceTrajectory.map(item => <p className="export-item" key={item.matchId}><strong>《{item.winnerTitle}》</strong> · {item.winnerArtistName}<br/><small>胜出于《{item.loserTitle}》· {item.loserArtistName}｜{item.derivedNote}</small></p>)}</> : null}<h2>继续听听</h2>{report.report.songRecommendations.map((item, index) => <p className="export-item" key={item.recordingId || index}><strong>{item.title}</strong> {item.artistName && `· ${item.artistName}`}<br/><small>{item.reason}{item.sourceStatus === 'web_discovered' ? `｜网络发现 · 待核验｜${item.sourceTitle || '来源资料'}｜请以音乐平台搜索结果为准` : ''}</small></p>)}<blockquote>{report.report.personalityEasterEgg}</blockquote><p className="export-disclaimer">{report.report.disclaimer}</p><footer>寻声 SoundSeek</footer></article>
 }
 
 function SourceReferenceCard({ source, compact = false }: { source: SourceReference; compact?: boolean }) {

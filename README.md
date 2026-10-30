@@ -1,18 +1,24 @@
-# IndieSoundQuest
+# 寻声 SoundSeek
 
 > 一个以多轮对话为主入口、由统一 ReAct Agent 驱动的中文音乐探索应用。
 
-IndieSoundQuest 不要求用户先填写标签或进入固定流程。用户可以直接描述喜欢的艺人、歌曲、声音、场景或情绪，Agent 会结合多轮上下文，在公开网络中寻找线索、通过 MusicBrainz 核验歌曲身份，并返回可继续追问和反馈的歌曲/艺人卡片。
+SoundSeek 不要求用户先填写标签或进入固定流程。用户可以直接描述喜欢的艺人、歌曲、声音、场景或情绪，Agent 会结合多轮上下文，在公开网络中寻找线索、通过 MusicBrainz 核验歌曲身份，并返回可继续追问和反馈的歌曲/艺人卡片。
 
 “歌曲世界杯”仍然存在，但它是一项按需进入的 Skill：只有用户明确要求淘汰赛、两两对决或直接开赛时，系统才会构建 16/32 首候选池。比赛结束后，完整选择轨迹可用于生成赛后偏好报告。
 
-[在线体验](https://indiesoundquest.cn/)
+[项目仓库](https://github.com/garfieldra/ProjectChuanZhi)
+
+本竞赛项目基于本人既有的 [IndieSoundQuest](https://github.com/garfieldra/IndieSoundQuest) 继续开发，保留完整提交历史。旧项目演示地址为 [indiesoundquest.cn](https://indiesoundquest.cn/)，不代表本分支已部署。品牌与运行配置调整见 [SoundSeek 改名说明](./docs/soundseek-branding.md)。
 
 ## 界面预览
 
-前端采用三栏 Agent 工作台：左侧管理持久化会话，中间承载对话、工具摘要与结果卡片，右侧展示会随 ReAct 决策滚动调整的计划。模型运行时只公开可展示的步骤与耗时，不暴露思维链。
+首页以简短介绍、唱片视觉和会话输入构成。输入后点击“开始探索”，会创建独立会话并将首条消息发送给 Agent，然后平滑进入对应的探索工作台。支持 Enter 发送、Shift+Enter 换行、草稿保留和失败重试。布局与衔接说明见 [首页设计](./docs/homepage-design.md)。
 
-![IndieSoundQuest 对话式音乐探索界面](./docs/assets/home.png)
+探索工作台采用三栏布局：左侧管理持久化会话，中间承载对话、工具摘要与结果卡片，右侧展示会随 ReAct 决策滚动调整的计划。模型运行时只公开可展示的步骤与耗时，不暴露思维链。
+
+![寻声 SoundSeek 探索工作台](./docs/assets/home.png)
+
+截图为本地前端使用示例会话数据的品牌预览，不代表在线服务或真实 AI 调用验收。
 
 ## 为什么做这个项目
 
@@ -140,7 +146,7 @@ flowchart LR
 ## 目录结构
 
 ```text
-IndieSoundQuest/
+ProjectChuanZhi/
 ├── web/                  # React 对话、卡片、赛事与报告界面
 ├── java-service/         # Java 领域服务、API、迁移和异步控制面
 ├── agent-service/        # 统一 ReAct Agent、工具、复合能力与 Worker
@@ -241,8 +247,8 @@ docker compose --env-file .env -f infra/compose.yaml down
 mvn -q test -f java-service/pom.xml
 
 # Python Agent（通过 Docker test stage）
-docker build --target test -t indie-sound-quest-agent-test agent-service
-docker run --rm indie-sound-quest-agent-test
+docker build --target test -t soundseek-agent-test agent-service
+docker run --rm soundseek-agent-test
 
 # Web
 npm --prefix web test

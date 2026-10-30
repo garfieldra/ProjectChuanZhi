@@ -330,7 +330,7 @@ class ConversationReActRuntime:
                 "lastfm": self.lastfm.enabled,
             },
         }
-        prompt = f"""你是 IndieSoundQuest 对话运行时的 ReAct 决策器，不输出思维链。
+        prompt = f"""你是 SoundSeek 对话运行时的 ReAct 决策器，不输出思维链。
 你是统一音乐探索 Agent。世界杯是可选 Skill，不是产品主流程；候选池构建、赛事分析和报告撰写是可调用的复合 Tool，而不是独立 Agent。
 你只能选择一个动作：
 - search_web：问题需要当前公开音乐资料、外部事实或具体推荐线索；用户要求推荐、相似艺人/歌曲或风格延展时，应先搜索再回答，除非当前观察中已有足够公开资料；
@@ -513,7 +513,7 @@ class ConversationReActRuntime:
             return _fallback_answer(state)
         sources = [{"title": item.get("sourceTitle"), "summary": item.get("summary"), "url": item.get("sourceUrl")} for item in state.get("web_sources", [])[:10]]
         knowledge = state.get("knowledge", [])[:6]
-        prompt = f"""你是 IndieSoundQuest 的音乐探索 Agent。用中文自然、克制地回答，不输出思维链。
+        prompt = f"""你是 SoundSeek 的音乐探索 Agent。用中文自然、克制地回答，不输出思维链。
 不要虚构歌曲、艺人、歌词、链接或工具结果。外部资料为空时，不得声称已经查询。
 用户问题：{request.user_message}
 会话摘要：{request.summary}
@@ -750,7 +750,7 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
         if self.model is None:
             return fallback
         sources = [{"title": item.get("sourceTitle"), "summary": item.get("summary")} for item in state.get("web_sources", [])[:5]]
-        prompt = f"""你是 IndieSoundQuest 的探索报告复合工具。只输出 JSON 对象，不输出思维链。
+        prompt = f"""你是 SoundSeek 的探索报告复合工具。只输出 JSON 对象，不输出思维链。
 基于对话生成克制、具体的中文音乐探索报告，不能虚构歌曲、艺人、链接或资料。
 用户本轮消息：{request.user_message}
 会话摘要：{request.summary}
@@ -1324,7 +1324,7 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
             "summary": str(item.get("summary") or "")[:900],
             "searchQuery": item.get("searchQuery"),
         } for item in sources[:24]]
-        prompt = f"""你是 IndieSoundQuest 的普通音乐推荐复合工具，不输出思维链。
+        prompt = f"""你是 SoundSeek 的普通音乐推荐复合工具，不输出思维链。
 用户请求：{request.user_message}
 用户本轮明确写出的艺人：{json.dumps(named_artists, ensure_ascii=False)}
 结构化音乐偏好：{json.dumps(preference_profile, ensure_ascii=False)}

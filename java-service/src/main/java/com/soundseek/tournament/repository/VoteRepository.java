@@ -1,0 +1,1 @@
+package com.soundseek.tournament.repository; import com.soundseek.tournament.domain.Vote; import java.util.*; import org.springframework.data.jpa.repository.JpaRepository; public interface VoteRepository extends JpaRepository<Vote,UUID>{ Optional<Vote> findByIdempotencyKey(String idempotencyKey); List<Vote> findByMatchIdIn(Collection<UUID> matchIds); }

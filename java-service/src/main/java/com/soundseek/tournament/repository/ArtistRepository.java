@@ -1,0 +1,11 @@
+package com.soundseek.tournament.repository;
+
+import com.soundseek.tournament.domain.Artist;
+import java.util.*;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface ArtistRepository extends JpaRepository<Artist, UUID> {
+  List<Artist> findAllByOrderBySortNameAsc();
+  Optional<Artist> findByMusicbrainzMbid(String musicbrainzMbid);
+  Optional<Artist> findFirstByNameIgnoreCase(String name);
+}

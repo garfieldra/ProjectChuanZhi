@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-app = FastAPI(title="IndieSoundQuest Zhihu Research Sidecar", version="0.1.0")
+app = FastAPI(title="SoundSeek Zhihu Research Sidecar", version="0.1.0")
 QUERY_PURPOSES = {"candidate_discovery", "cultural_context", "recommendation_validation"}
 
 

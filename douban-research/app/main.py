@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-app = FastAPI(title="IndieSoundQuest Douban Research Sidecar")
+app = FastAPI(title="SoundSeek Douban Research Sidecar")
 class SearchRequest(BaseModel):
     query: str = Field(min_length=2, max_length=240)
     purpose: str

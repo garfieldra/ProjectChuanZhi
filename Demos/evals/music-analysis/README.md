@@ -3,9 +3,9 @@
 从项目根目录运行（使用已构建的 Agent 镜像；测试会创建独立访客会话，不读正式用户数据）：
 
 ```bash
-docker run --rm --network indie-sound-quest_internal \
+docker run --rm --network soundseek_internal \
   -v "$PWD/Demos:/demos" -e PYTHONDONTWRITEBYTECODE=1 \
-  indie-sound-quest-agent-service \
+  soundseek-agent-service \
   python /demos/evals/music-analysis/run_eval.py \
   --base-url http://java-service:8080
 ```

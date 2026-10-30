@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the public, guest-scoped IndieSoundQuest journey end to end.
+"""Run the public, guest-scoped SoundSeek journey end to end.
 
 The script deliberately uses the browser-facing Java API instead of calling the
 Python graphs directly:
@@ -180,7 +180,7 @@ def verify(base_url: str, preference: str, size: int) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Verify the complete IndieSoundQuest public user journey")
+    parser = argparse.ArgumentParser(description="Verify the complete SoundSeek public user journey")
     parser.add_argument("--base-url", default="http://127.0.0.1:8080")
     parser.add_argument("--size", type=int, choices=(16, 32), default=32)
     parser.add_argument("--preference", default="我喜欢徐佳莹、艾怡良与郑宜农，想从锋利的女性创作、都市情绪和真诚的抒情里开始一场歌曲世界杯。")

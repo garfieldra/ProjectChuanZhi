@@ -9,11 +9,11 @@ server:
 
 spring:
   application:
-    name: indie-sound-quest-java-service
+    name: soundseek-java-service
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/indie_sound_quest}
-    username: ${SPRING_DATASOURCE_USERNAME:indie_sound_quest}
-    password: ${SPRING_DATASOURCE_PASSWORD:indie_sound_quest}
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/soundseek}
+    username: ${SPRING_DATASOURCE_USERNAME:soundseek}
+    password: ${SPRING_DATASOURCE_PASSWORD:soundseek}
   jpa:
     open-in-view: false
     hibernate:
@@ -31,12 +31,12 @@ spring:
     store-type: redis
     timeout: 30d
     redis:
-      namespace: indie-sound-quest:session
+      namespace: soundseek:session
   rabbitmq:
     host: ${SPRING_RABBITMQ_HOST:rabbitmq}
     port: ${SPRING_RABBITMQ_PORT:5672}
-    username: ${SPRING_RABBITMQ_USERNAME:indiesoundquest}
-    password: ${SPRING_RABBITMQ_PASSWORD:indiesoundquest}
+    username: ${SPRING_RABBITMQ_USERNAME:soundseek}
+    password: ${SPRING_RABBITMQ_PASSWORD:soundseek}
     publisher-confirm-type: correlated
     listener:
       simple:
@@ -87,9 +87,9 @@ agent:
 
 musicbrainz:
   base-url: ${MUSICBRAINZ_BASE_URL:https://musicbrainz.org/ws/2}
-  user-agent: ${MUSICBRAINZ_USER_AGENT:IndieSoundQuest/0.1 (https://github.com/garfieldra/IndieSoundQuest)}
+  user-agent: ${MUSICBRAINZ_USER_AGENT:SoundSeek/0.1 (https://github.com/garfieldra/ProjectChuanZhi)}
 
-indie:
+soundseek:
   auth:
     github-client-id: ${GITHUB_OAUTH_CLIENT_ID:}
     github-client-secret: ${GITHUB_OAUTH_CLIENT_SECRET:}
@@ -111,6 +111,6 @@ listening:
   apple:
     base-url: ${APPLE_ITUNES_SEARCH_BASE_URL:https://itunes.apple.com/search}
     storefront: ${APPLE_ITUNES_STOREFRONT:CN}
-    user-agent: ${APPLE_ITUNES_USER_AGENT:IndieSoundQuest/0.1}
+    user-agent: ${APPLE_ITUNES_USER_AGENT:SoundSeek/0.1}
     available-cache-hours: ${APPLE_PREVIEW_AVAILABLE_CACHE_HOURS:168}
     unavailable-cache-hours: ${APPLE_PREVIEW_UNAVAILABLE_CACHE_HOURS:24}

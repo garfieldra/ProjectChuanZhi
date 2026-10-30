@@ -40,7 +40,7 @@ def resolve(client: httpx.Client, title: str, album: str) -> dict[str, object]:
 
 
 def main() -> None:
-    with httpx.Client(timeout=15, headers={"User-Agent": "IndieSoundQuest/0.1 seed-cover-sync"}) as client:
+    with httpx.Client(timeout=15, headers={"User-Agent": "SoundSeek/0.1 seed-cover-sync"}) as client:
         output = []
         for title, album in songs():
             output.append(resolve(client, title, album))

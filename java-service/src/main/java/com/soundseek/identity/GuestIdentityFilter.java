@@ -1,0 +1,10 @@
+package com.soundseek.identity;
+import com.soundseek.tournament.domain.GuestSession;
+import com.soundseek.tournament.repository.GuestSessionRepository;
+import jakarta.servlet.*; import jakarta.servlet.http.*; import java.io.IOException; import java.util.*; import org.springframework.security.authentication.UsernamePasswordAuthenticationToken; import org.springframework.security.core.authority.SimpleGrantedAuthority; import org.springframework.security.core.context.SecurityContextHolder; import org.springframework.stereotype.Component; import org.springframework.web.filter.OncePerRequestFilter;
+@Component public class GuestIdentityFilter extends OncePerRequestFilter {
+ public static final String ATTRIBUTE="guestSession"; private final GuestIdentityService identities; private final UserAccountRepository users; private final GuestSessionRepository sessions;
+ public GuestIdentityFilter(GuestIdentityService identities,UserAccountRepository users,GuestSessionRepository sessions){this.identities=identities;this.users=users;this.sessions=sessions;}
+ @Override protected boolean shouldNotFilter(HttpServletRequest request){return request.getRequestURI().startsWith("/internal/v1/");}
+ @Override protected void doFilterInternal(HttpServletRequest request,HttpServletResponse response,FilterChain chain)throws ServletException,IOException {var context=SecurityContextHolder.getContext();var authentication=context.getAuthentication();GuestSession guest=null;if(authentication!=null&&authentication.isAuthenticated()&&!authentication.getName().startsWith("guest:"))guest=users.findByEmailNormalized(authentication.getName().toLowerCase(Locale.ROOT)).flatMap(user->sessions.findById(user.getPrimaryGuestSessionId())).orElse(null);if(guest==null)guest=identities.resolve(request,response);request.setAttribute(ATTRIBUTE,guest);if(authentication==null){context.setAuthentication(new UsernamePasswordAuthenticationToken("guest:"+guest.getId(),null,List.of(new SimpleGrantedAuthority("ROLE_GUEST"))));}chain.doFilter(request,response);}
+}

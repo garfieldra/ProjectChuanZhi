@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     spotify_market: str | None = None
     milvus_uri: str = "http://milvus:19530"
     embedding_model: str = "BAAI/bge-small-zh-v1.5"
-    knowledge_collection: str = "isq_song_theme_cards_v1"
+    knowledge_collection: str = "soundseek_song_theme_cards_v1"
     agent_max_tool_rounds: int = 6
     # Domestic community research is opt-in.  Keeping it disabled makes a
     # development boot deterministic and avoids accidental account-dependent
