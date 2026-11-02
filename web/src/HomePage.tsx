@@ -1,7 +1,8 @@
 import { Fragment, useRef, useState, type FormEvent, type MouseEvent } from 'react'
-import { BrandMark } from './BrandMark'
+import { HomeHeader } from './HomeHeader'
 import { beginExploration, readHomeDraft, saveHomeDraft, type ExplorationEntry } from './landingEntry'
 import './home.css'
+import './header.css'
 
 type Props = {
   onExplore: (conversationId?: string, content?: string) => Promise<void>
@@ -51,13 +52,11 @@ export function HomePage({ onExplore, preloadWorkspace }: Props) {
 
   return <div className="home-page">
     <a className="home-skip-link" href="#home-prompt">跳到音乐探索</a>
-    <header className="home-header">
-      <a className="home-brand" href="/" aria-label="寻声 SoundSeek 首页"><BrandMark /><span>寻声</span><small>SoundSeek</small></a>
-      <nav aria-label="主导航">
-        <a href="#about">关于寻声</a>
-        <a href="/explore" className="home-enter" onClick={continueExploring} onMouseEnter={() => { void preloadWorkspace().catch(() => {}) }} onFocus={() => { void preloadWorkspace().catch(() => {}) }}>进入探索<ArrowIcon /></a>
-      </nav>
-    </header>
+    <HomeHeader onExplore={continueExploring} preloadWorkspace={preloadWorkspace} busy={connecting} onSelectPrompt={prompt => {
+      updateDraft(prompt)
+      textarea.current?.focus({ preventScroll: true })
+      textarea.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' })
+    }} />
     <main className="home-main">
       <section className="home-hero" aria-labelledby="home-heading">
         <div className="home-intro">

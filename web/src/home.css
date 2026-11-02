@@ -36,14 +36,14 @@
 .home-artwork { margin: 0 -12px 0 0; height: clamp(260px, 33vh, 370px); display: grid; place-items: center; }
 .home-artwork img { display: block; width: 100%; height: 100%; object-fit: contain; transform: scale(1.28); }
 .home-entry { max-width: 1040px; margin: 0 auto; }
-.home-composer-frame { border: 1px solid #bcb4a9; border-radius: 7px; overflow: hidden; background: #fcfbf8; transition: border-color 180ms; view-transition-name: soundseek-composer; }
+.home-composer-frame { border: 1px solid #bcb4a9; border-radius: var(--radius-composer); overflow: hidden; background: #fcfbf8; transition: border-color 180ms; view-transition-name: soundseek-composer; }
 .home-composer-frame:focus-within { border-color: var(--home-accent); }
 .home-composer-frame textarea { display: block; resize: none; width: 100%; min-height: clamp(110px, 16.5vh, 180px); max-height: 320px; border: 0; border-radius: 0; background: transparent; padding: 28px; font-size: 19px; font-weight: 400; line-height: 1.7; color: var(--home-ink); outline: none; }
 .home-composer-frame textarea:focus-visible { outline: none; }
 .home-composer-frame textarea::placeholder { color: #8c8983; opacity: 1; }
 .home-composer-toolbar { min-height: 75px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 10px 20px 10px 28px; border-top: 1px solid var(--home-line); }
 .home-composer-toolbar > p { margin: 0; color: var(--home-muted); font: 400 14px/1.7 var(--home-serif); }
-.home-submit { min-width: 174px; min-height: 52px; padding: 13px 22px; display: inline-flex; align-items: center; justify-content: center; gap: 20px; border: 1px solid var(--home-accent); border-radius: 3px; background: var(--home-accent); color: #fffdf8; font-size: 16px; line-height: 1.4; white-space: nowrap; transition: background 160ms; }
+.home-submit { min-width: 174px; min-height: 52px; padding: 13px 22px; display: inline-flex; align-items: center; justify-content: center; gap: 20px; border: 1px solid var(--home-accent); border-radius: var(--radius-action); background: var(--home-accent); color: #fffdf8; font-size: 16px; line-height: 1.4; white-space: nowrap; transition: background 160ms; }
 .home-submit:not(:disabled):hover { background: #913e31; }
 .home-submit:disabled { cursor: not-allowed; opacity: .64; }
 .home-submit:disabled:has(.home-connecting-mark) { cursor: progress; opacity: 1; }
@@ -65,7 +65,7 @@
 .workspace-loading { min-height: 100svh; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; background: #f8f7f4; color: #77736c; }
 .workspace-loading button { background: transparent; color: #a64b3c; border: 0; padding: 12px; font-size: 15px; }
 .conversation-brand { view-transition-name: soundseek-brand; text-decoration: none; color: inherit; }
-.conversation-composer > .composer-frame { view-transition-name: soundseek-composer; border-radius: 7px; box-shadow: none; }
+.conversation-composer > .composer-frame { view-transition-name: soundseek-composer; box-shadow: none; }
 .conversation-composer { background: var(--canvas); }
 ::view-transition-group(soundseek-composer), ::view-transition-group(soundseek-brand) { animation-duration: 360ms; animation-timing-function: cubic-bezier(.2,.7,.2,1); }
 ::view-transition-old(root) { animation: home-fade-out 160ms ease both; }

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { PreviewAudio, type AudioSnapshot } from './previewAudio'
 import { apiFetch } from './apiClient'
 
 export type ListeningOptions = {
@@ -26,8 +27,8 @@ export function playbackLabel(phase: PlaybackPhase) {
 }
 
 export function useListeningPreview() {
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  const playingIdRef = useRef<string | null>(null)
+  const [active, setActive] = useState<AudioSnapshot | null>(null)
+  const playerRef = useRef<PreviewAudio | null>(null)
   const cacheRef = useRef(new Map<string, ListeningOptions>())
   const pendingRef = useRef(new Map<string, Promise<ListeningOptions>>())
   const requestGenerationRef = useRef(0)
@@ -37,22 +38,12 @@ export function useListeningPreview() {
     setStates(current => ({ ...current, [recordingId]: state }))
   }
 
-  function stop() {
-    requestGenerationRef.current += 1
-    const currentId = playingIdRef.current
-    if (audioRef.current) {
-      audioRef.current.onended = null
-      audioRef.current.onerror = null
-      audioRef.current.pause()
-      audioRef.current.removeAttribute('src')
-      audioRef.current = null
-    }
-    if (currentId) setStates(current => ({
-      ...current,
-      [currentId]: { ...current[currentId], phase: 'idle' },
-    }))
-    playingIdRef.current = null
-  }
+  if (!playerRef.current) playerRef.current = new PreviewAudio(snapshot => {
+    setActive(snapshot)
+    setStates(previous => ({ ...previous, [snapshot.id]: { ...previous[snapshot.id], phase: snapshot.phase } }))
+  })
+  const analyser = useCallback(() => playerRef.current?.analyser ?? null, [])
+  function stop() { requestGenerationRef.current++; playerRef.current?.stop() }
 
   async function load(recordingId: string) {
     const cached = cacheRef.current.get(recordingId)
@@ -72,53 +63,20 @@ export function useListeningPreview() {
   }
 
   async function toggle(recordingId: string) {
-    const current = states[recordingId]
-    if (playingIdRef.current === recordingId && audioRef.current) {
-      if (audioRef.current.paused) {
-        try { await audioRef.current.play(); update(recordingId, { ...current, phase: 'playing' }) }
-        catch { update(recordingId, { ...current, phase: 'error' }) }
-      } else {
-        audioRef.current.pause()
-        update(recordingId, { ...current, phase: 'paused' })
-      }
-      return
-    }
-
-    stop()
-    const requestGeneration = requestGenerationRef.current
-    update(recordingId, { ...current, phase: 'loading' })
+    const player = playerRef.current!
+    if (active?.id === recordingId && player.audio && active.phase !== 'error') { await player.toggle(); return }
+    stop(); setActive(null)
+    const generation = requestGenerationRef.current
+    player.prepare(recordingId)
+    update(recordingId, { ...states[recordingId], phase: 'loading' })
     try {
       const options = await load(recordingId)
-      if (requestGeneration !== requestGenerationRef.current) return
-      if (!options.preview) {
-        update(recordingId, { phase: 'unavailable', options })
-        return
-      }
-      const audio = new Audio(options.preview.url)
-      audio.preload = 'none'
-      audioRef.current = audio
-      playingIdRef.current = recordingId
-      audio.onended = () => {
-        playingIdRef.current = null
-        audioRef.current = null
-        update(recordingId, { phase: 'idle', options })
-      }
-      audio.onerror = () => {
-        playingIdRef.current = null
-        audioRef.current = null
-        update(recordingId, { phase: 'error', options })
-      }
-      await audio.play()
-      if (requestGeneration !== requestGenerationRef.current) {
-        audio.pause()
-        return
-      }
-      update(recordingId, { phase: 'playing', options })
+      if (generation !== requestGenerationRef.current || !player.isOwner()) return
+      if (!options.preview) { player.stop(); setActive(null); update(recordingId, { phase: 'unavailable', options }); return }
+      update(recordingId, { phase: 'loading', options })
+      await player.play(recordingId, options.preview.url)
     } catch {
-      if (requestGeneration !== requestGenerationRef.current) return
-      playingIdRef.current = null
-      audioRef.current = null
-      update(recordingId, { phase: 'error', options: cacheRef.current.get(recordingId) })
+      if (generation === requestGenerationRef.current && player.isOwner()) { player.stop(); setActive(null); update(recordingId, { phase: 'error', options: cacheRef.current.get(recordingId) }) }
     }
   }
 
@@ -126,15 +84,18 @@ export function useListeningPreview() {
     if (cacheRef.current.has(recordingId)) return
     try {
       const options = await load(recordingId)
-      update(recordingId, { phase: options.preview ? 'idle' : 'unavailable', options })
+      setStates(previous => previous[recordingId] ? previous : { ...previous, [recordingId]: { phase: options.preview ? 'idle' : 'unavailable', options } })
     } catch {
       // Hover/focus prefetch is best-effort; an explicit click will retry visibly.
     }
   }
 
-  useEffect(() => stop, [])
+  useEffect(() => () => { requestGenerationRef.current++; playerRef.current?.dispose() }, [])
 
   return {
+    active,
+    analyser,
+    seek: (time: number) => playerRef.current?.seek(time),
     stateFor: (recordingId: string): PlaybackState => states[recordingId] ?? { phase: 'idle' },
     toggle,
     prefetch,

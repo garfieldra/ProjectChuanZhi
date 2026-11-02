@@ -30,6 +30,13 @@ public class UserAccount {
     return value;
   }
 
+  public void rename(String displayName) {
+    var value = displayName == null ? "" : displayName.strip();
+    if (value.isBlank() || value.length() > 80) throw new IllegalArgumentException("称呼需要填写 1–80 个字符");
+    this.displayName = value;
+    this.updatedAt = Instant.now();
+  }
+
   public UUID getId() { return id; }
   public String getEmailNormalized() { return emailNormalized; }
   public String getDisplayName() { return displayName; }

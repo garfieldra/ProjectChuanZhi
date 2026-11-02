@@ -1,4 +1,5 @@
-import { useEffect, useState, type ComponentType } from 'react'
+import { readPlaybackSettings, syncMotionPreference } from './playbackSettings'
+import { useEffect, useRef, useState, type ComponentType } from 'react'
 import { flushSync } from 'react-dom'
 import { HomePage } from './HomePage'
 import type { ConversationAppProps } from './ConversationApp'
@@ -14,7 +15,7 @@ function locationState() {
 type TransitionDocument = Document & { startViewTransition?: (update: () => void) => { finished: Promise<void>; updateCallbackDone: Promise<void> } }
 async function transition(update: () => void) {
   const doc = document as TransitionDocument
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { update(); return }
+  if (readPlaybackSettings().reduceMotion || window.matchMedia('(prefers-reduced-motion: reduce)').matches) { update(); return }
   if (doc.startViewTransition) {
     const result = doc.startViewTransition(() => flushSync(update))
     void result.finished.catch(() => {})
@@ -35,13 +36,22 @@ async function transition(update: () => void) {
 }
 
 export function SoundSeekApp() {
+  useEffect(() => { syncMotionPreference() }, [])
   const [route, setRoute] = useState(locationState)
+  const routeLocation = useRef(route)
   const [WorkspaceView, setWorkspace] = useState<Workspace | null>(null)
   const [initialContent, setInitialContent] = useState('')
   const [loadError, setLoadError] = useState(false)
 
   useEffect(() => {
-    const onPopState = () => { setInitialContent(''); void transition(() => setRoute(locationState())); window.scrollTo(0, 0) }
+    const onPopState = () => {
+      const next = locationState()
+      // Fragment navigation belongs to the browser. A page transition here
+      // would cancel the anchor scroll and move controls under the pointer.
+      if (next.explore === routeLocation.current.explore && next.conversationId === routeLocation.current.conversationId) return
+      routeLocation.current = next
+      setInitialContent(''); void transition(() => { if (routeLocation.current === next) setRoute(next) }); window.scrollTo(0, 0)
+    }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
@@ -60,13 +70,13 @@ export function SoundSeekApp() {
     const url = conversationId ? `/explore?conversation=${encodeURIComponent(conversationId)}` : '/explore'
     await transition(() => {
       window.history.pushState({}, '', url)
-      setWorkspace(() => view); setInitialContent(content); setRoute(locationState()); setLoadError(false)
+      setWorkspace(() => view); setInitialContent(content); routeLocation.current = locationState(); setRoute(routeLocation.current); setLoadError(false)
     })
     window.scrollTo(0, 0)
   }
 
   function home() {
-    void transition(() => { window.history.pushState({}, '', '/'); setRoute(locationState()); setInitialContent('') })
+    void transition(() => { window.history.pushState({}, '', '/'); routeLocation.current = locationState(); setRoute(routeLocation.current); setInitialContent('') })
     window.scrollTo(0, 0)
   }
 

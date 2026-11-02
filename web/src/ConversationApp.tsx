@@ -1,3 +1,6 @@
+import { VinylPlayer } from './VinylPlayer'
+import { AccountDialog } from './AccountDialog'
+import type { AuthSession } from './auth'
 import { BrandMark } from './BrandMark'
 import { FormEvent, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { CandidateItem, CandidatePoolResponse } from './candidatePool'
@@ -20,7 +23,6 @@ type CardPayload = { size?: 16 | 32; status?: string; summary?: string; preferen
 type Tournament = { id: string; status: string; size: number; completedVoteCount: number; currentMatch: { id: string; leftEntryId: string; rightEntryId: string } | null; entries: { id: string; title: string; artistName: string; coverUrl?: string }[] }
 type Report = { runId?: string; status: string; reportId?: string; version?: number; report?: { summary?: string; preferenceDimensions?: { label?: string; summary?: string }[]; songRecommendations?: { title?: string; artistName?: string; reason?: string; searchUrl?: string }[]; artistRecommendations?: { artistName?: string; reason?: string; searchUrl?: string }[]; personalityEasterEgg?: string } }
 type RunFollowUp = { id: string; clientMessageId: string; content: string; status: 'WAITING' | 'DISPATCHED' | 'INTERVENED' | 'CANCELLED'; nextRunId?: string | null; createdAt: string }
-type AuthSession = { authenticated: boolean; displayName?: string | null; email?: string | null; avatarUrl?: string | null; githubEnabled: boolean }
 
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await apiFetch(`/api/v1${path}`, options)
@@ -88,6 +90,7 @@ export function ConversationApp({ initialConversationId, initialContent, onHome 
   const [memory, setMemory] = useState<MemoryStatus | null>(null)
   const [compressingMemory, setCompressingMemory] = useState(false)
   const [authSession, setAuthSession] = useState<AuthSession | null>(null)
+  const accountTrigger = useRef<HTMLButtonElement>(null)
   const [authOpen, setAuthOpen] = useState(false)
   const timelineRef = useRef<HTMLElement>(null)
   const resumingRunId = useRef<string | null>(null)
@@ -158,9 +161,6 @@ export function ConversationApp({ initialConversationId, initialContent, onHome 
     } catch (error) { setNotice(friendlyError(error)) }
   }
 
-  async function logout() {
-    try { setAuthSession(await api<AuthSession>('/auth/logout', { method: 'POST' })); setAuthOpen(false); window.location.reload() } catch (error) { setNotice(friendlyError(error)) }
-  }
   async function createConversation() {
     try { const created = await api<Conversation>('/conversations', { method: 'POST' }); setConversations(previous => [created, ...previous]); setCurrent(created); setMessages([]); setProgress([]); setPlan(null); setPlanHistory([]); setStreamingResponse(''); setCurrentRunId(null); setQueuedFollowUp(null); setInterventionUsed(false); setNotice(''); setMobileSidebarOpen(false); await refreshMemory(created.id) } catch (error) { setNotice(friendlyError(error)) }
   }
@@ -307,7 +307,7 @@ export function ConversationApp({ initialConversationId, initialContent, onHome 
       <div className="conversation-list-tools"><input value={conversationSearch} onChange={event => setConversationSearch(event.target.value)} placeholder="搜索对话" aria-label="搜索对话" /><button type="button" className={showArchived ? 'active' : ''} onClick={() => setShowArchived(value => !value)}>{showArchived ? '返回最近' : '归档'}</button></div>
       <p className="conversation-label">{showArchived ? '已归档对话' : '最近对话'}</p>
       <nav>{visibleConversations.map(conversation => <div className={`conversation-nav-item ${conversation.id === current?.id ? 'active' : ''}`} key={conversation.id}>{renamingId === conversation.id ? <form className="conversation-rename" onSubmit={event => { event.preventDefault(); void renameConversation(conversation) }}><input autoFocus maxLength={80} value={renameDraft} onChange={event => setRenameDraft(event.target.value)} onBlur={() => void renameConversation(conversation)} aria-label="对话名称" /></form> : <button className="conversation-nav-open" onClick={() => void open(conversation)}><span className="conversation-nav-icon" aria-hidden="true" /><span><strong>{conversation.title}</strong><small>{new Date(conversation.lastMessageAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}</small></span></button>}<button className="conversation-nav-more" type="button" aria-label={`管理对话：${conversation.title}`} onClick={() => setConversationMenuId(value => value === conversation.id ? null : conversation.id)}><MoreIcon /></button>{conversationMenuId === conversation.id && <div className="conversation-nav-menu">{deleteConfirmId === conversation.id ? <><p>删除这段对话？</p><div><button type="button" onClick={() => setDeleteConfirmId(null)}>取消</button><button className="danger" type="button" onClick={() => void deleteConversation(conversation)}>删除</button></div></> : <><button type="button" onClick={() => { setRenameDraft(conversation.title); setRenamingId(conversation.id); setConversationMenuId(null) }}>重命名</button><button type="button" onClick={() => void setArchived(conversation, conversation.status !== 'ARCHIVED')}>{conversation.status === 'ARCHIVED' ? '恢复对话' : '归档对话'}</button><button className="danger" type="button" onClick={() => setDeleteConfirmId(conversation.id)}>删除对话</button></>}</div>}</div>)}</nav>
-      <button className="conversation-account" type="button" onClick={() => setAuthOpen(true)}><span className="conversation-account-avatar">{authSession?.avatarUrl ? <img src={authSession.avatarUrl} alt="" /> : (authSession?.displayName || '访').slice(0, 1)}</span><span><strong>{authSession?.authenticated ? authSession.displayName : '登录以同步'}</strong><small>{authSession?.authenticated ? '对话已同步到账户' : '在不同设备继续探索'}</small></span></button>
+
     </aside>
     <section className="conversation-main"><header className="conversation-header"><button className="mobile-menu-toggle" type="button" aria-label="打开会话列表" onClick={() => setMobileSidebarOpen(true)}><MenuIcon /></button><div><p className="eyebrow">当前对话</p><h1>{current?.title || '新的音乐探索'}</h1></div><button className="report-action" type="button" disabled={!current || runActive} onClick={() => void requestExplorationReport()}><ReportIcon /><span>生成报告</span></button></header>{notice && <p className="conversation-notice">{notice}</p>}
       <section className="conversation-timeline" ref={timelineRef} aria-live="polite">
@@ -335,27 +335,9 @@ export function ConversationApp({ initialConversationId, initialContent, onHome 
       <form className="conversation-composer" onSubmit={event => void send(event)}><div className="composer-frame"><textarea value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder={queuedFollowUp ? '已有一条消息等待发送' : interventionUsed ? '已调整本轮方向，请等待这一轮完成' : pending && currentRunId ? '输入下一条消息……' : '和寻声聊聊音乐……'} maxLength={2000} disabled={composerLocked} />{queuedFollowUp && <div className="composer-follow-up"><span><small>下一条消息</small><strong>{queuedFollowUp.content}</strong></span><button type="button" onClick={() => void interveneQueuedMessage()}>立即介入本轮</button></div>}<div className="composer-toolbar"><div className="composer-memory"><button className="memory-compress-button" type="button" aria-label="整理较早的对话" title={memory?.manualCompressionAvailable ? '整理较早的对话' : '目前无需整理'} disabled={!memory?.manualCompressionAvailable || runActive || compressingMemory} onClick={() => void compressConversationMemory()}>{compressingMemory ? <span className="memory-spinner" /> : <MemoryIcon />}</button>{memory && <div className="memory-meter" title="当前对话的记忆占用；较长时会自动整理较早内容" role="progressbar" aria-label="对话记忆占用" aria-valuemin={0} aria-valuemax={100} aria-valuenow={memory.percent}><span><i style={{ width: `${memory.percent}%` }} /></span></div>}</div><button className={`composer-send ${composerAction === 'stop' ? 'stop' : ''}`} type={composerAction === 'stop' ? 'button' : 'submit'} onClick={composerAction === 'stop' ? () => void stopCurrentRun() : undefined} aria-label={composerAction === 'stop' ? '停止生成' : '发送消息'} title={composerAction === 'stop' ? '停止生成' : '发送'} disabled={composerAction === 'disabled' || (composerAction === 'send' && composerLocked)}>{composerAction === 'stop' ? <StopIcon /> : pending && !currentRunId ? <span className="composer-spinner" /> : <SendIcon />}</button></div></div><small>{queuedFollowUp ? '本轮结束后会自动发送；需要改变当前结果时再选择立即介入。' : interventionUsed ? '本轮已经调整过一次，完成后可以继续对话。' : pending && currentRunId ? '直接发送会排到下一轮。' : memory?.autoCompressionReady ? '稍后会自动整理较早的对话。' : '请核对重要的音乐资料与链接。'}</small></form>
     </section>
     <aside className="conversation-agent-panel"><AgentPlanPanel plans={planHistory.length ? planHistory : (plan ? [plan] : [])} active={runActive} latest={progress[progress.length - 1]} /></aside>
-    {authOpen && <AuthDialog session={authSession} onClose={() => setAuthOpen(false)} onAuthenticated={value => { setAuthSession(value); setAuthOpen(false); window.location.reload() }} onLogout={() => void logout()} />}
+      <button ref={accountTrigger} className="account-launcher" type="button" aria-label={authSession?.authenticated ? "打开账户菜单" : "登录账户"} aria-haspopup={authSession?.authenticated ? undefined : "dialog"} aria-expanded={authOpen} onClick={() => setAuthOpen(value => !value)}><span className="conversation-account-avatar">{authSession?.avatarUrl ? <img src={authSession.avatarUrl} alt="" /> : (authSession?.displayName || '访').slice(0, 1)}</span><span>{authSession?.authenticated ? authSession.displayName : '登录'}</span></button>
+    {authOpen && <AccountDialog returnFocusRef={accountTrigger} session={authSession} onClose={() => setAuthOpen(false)} onSessionChange={(value, reason) => { setAuthSession(value); if (reason !== 'profile') { setAuthOpen(false); window.location.reload() } }} />}
   </main>
-}
-
-function AuthDialog({ session, onClose, onAuthenticated, onLogout }: { session: AuthSession | null; onClose: () => void; onAuthenticated: (value: AuthSession) => void; onLogout: () => void }) {
-  const [registering, setRegistering] = useState(false)
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [displayName, setDisplayName] = useState('')
-  const [error, setError] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  async function submit(event: FormEvent) {
-    event.preventDefault(); setSubmitting(true); setError('')
-    try {
-      const response = await apiFetch(`/api/v1/auth/${registering ? 'register' : 'login'}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(registering ? { email, password, displayName } : { email, password }) })
-      const body = await response.json() as AuthSession & { message?: string }
-      if (!response.ok) throw new Error(body.message || '登录没有完成，请重试。')
-      onAuthenticated(body)
-    } catch (reason) { setError(reason instanceof Error ? reason.message : '登录没有完成，请重试。') } finally { setSubmitting(false) }
-  }
-  return <div className="auth-dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}><section className="auth-dialog" role="dialog" aria-modal="true" aria-label="账户"><button className="auth-dialog-close" type="button" onClick={onClose} aria-label="关闭">×</button>{session?.authenticated ? <><p className="eyebrow">账户</p><h2>{session.displayName}</h2><p>{session.email}</p><button className="auth-secondary" type="button" onClick={onLogout}>退出登录</button></> : <><p className="eyebrow">同步音乐探索</p><h2>{registering ? '创建账户' : '欢迎回来'}</h2><p>登录后，当前访客对话会自动保留并同步到你的账户。</p><form onSubmit={event => void submit(event)}>{registering && <label>称呼<input value={displayName} maxLength={80} onChange={event => setDisplayName(event.target.value)} autoComplete="name" /></label>}<label>邮箱<input type="email" required value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" /></label><label>密码<input type="password" required minLength={registering ? 10 : undefined} value={password} onChange={event => setPassword(event.target.value)} autoComplete={registering ? 'new-password' : 'current-password'} /></label>{error && <p className="auth-error">{error}</p>}<button className="auth-primary" disabled={submitting}>{submitting ? '正在处理…' : registering ? '创建并登录' : '登录'}</button></form>{session?.githubEnabled && <a className="auth-github" href="/oauth2/authorization/github">使用 GitHub 登录</a>}<button className="auth-switch" type="button" onClick={() => { setRegistering(value => !value); setError('') }}>{registering ? '已有账户？直接登录' : '还没有账户？创建一个'}</button></>}</section></div>
 }
 
 function Welcome({ onSelect }: { onSelect: (text: string) => void }) { return <div className="conversation-welcome"><p className="eyebrow">音乐探索对话</p><h2>最近想从哪种声音开始？</h2><p>描述喜欢的艺人、反复听的歌、某种情绪或一个聆听场景。我会和你一起理解偏好、查找资料、推荐作品，并把重要线索留在这段对话里。</p><div><button onClick={() => onSelect('我喜欢徐佳莹、艾怡良和郑宜农，想了解她们的共同点和相近的音乐。')}>从华语创作女声开始</button><button onClick={() => onSelect('想找一些适合夜晚散步、克制但不阴郁的独立流行。')}>寻找夜晚散步的歌</button></div></div> }
@@ -488,6 +470,12 @@ function MusicRecommendationsCard({ payload, conversationId }: { payload?: strin
     <h2>{value.title || '这轮值得继续听的方向'}</h2>
     {value.appliedInstruction && <small className="recommendation-refinement">已应用你的调整：{value.appliedInstruction}</small>}
     {value.summary && <p>{value.summary}</p>}
+    {listening.active && (() => {
+      const active = listening.active
+      const song = displaySongs.find(item => item.recordingId === active.id)
+      const preview = listening.stateFor(active.id).options?.preview
+      return song ? <VinylPlayer title={song.title || '音乐试听'} artist={song.artistName} coverUrl={song.coverUrl} state={active} analyser={listening.analyser} onToggle={() => void listening.toggle(active.id)} onSeek={listening.seek} attribution={preview?.attribution} trackUrl={preview?.providerTrackUrl} /> : null
+    })()}
     {displaySongs.length ? <><h3>歌曲</h3><ol className="music-recommendation-list">{displaySongs.map((item, index) => {
       const feedbackKey = `song-${item.recordingId || index}`
       const playback = item.recordingId ? listening.stateFor(item.recordingId) : null

@@ -62,6 +62,13 @@ public class AccountService implements UserDetailsService {
 
   @Transactional(readOnly = true) public Optional<UserAccount> current(String username) { return username == null ? Optional.empty() : users.findByEmailNormalized(normalize(username)); }
 
+  @Transactional
+  public UserAccount updateProfile(String username, String displayName) {
+    var account = current(username).filter(user -> "ACTIVE".equals(user.getStatus())).orElseThrow(() -> new UsernameNotFoundException("account unavailable"));
+    account.rename(displayName);
+    return users.save(account);
+  }
+
   @Override @Transactional(readOnly = true)
   public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
     var account = users.findByEmailNormalized(normalize(username)).orElseThrow(() -> new UsernameNotFoundException("invalid credentials"));
