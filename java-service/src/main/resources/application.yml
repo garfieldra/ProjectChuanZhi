@@ -110,7 +110,7 @@ soundseek:
 listening:
   apple:
     base-url: ${APPLE_ITUNES_SEARCH_BASE_URL:https://itunes.apple.com/search}
-    storefront: ${APPLE_ITUNES_STOREFRONT:CN}
+    storefront: ${APPLE_ITUNES_STOREFRONT:US}
     user-agent: ${APPLE_ITUNES_USER_AGENT:SoundSeek/0.1}
     available-cache-hours: ${APPLE_PREVIEW_AVAILABLE_CACHE_HOURS:168}
     unavailable-cache-hours: ${APPLE_PREVIEW_UNAVAILABLE_CACHE_HOURS:24}

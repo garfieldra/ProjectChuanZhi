@@ -28,7 +28,7 @@ public class AppleItunesClient {
   public AppleItunesClient(
       ObjectMapper objectMapper,
       @Value("${listening.apple.base-url:https://itunes.apple.com/search}") String baseUrl,
-      @Value("${listening.apple.storefront:CN}") String storefront,
+      @Value("${listening.apple.storefront:US}") String storefront,
       @Value("${listening.apple.user-agent:SoundSeek/0.1}") String userAgent) {
     this.objectMapper = objectMapper;
     this.baseUrl = baseUrl;

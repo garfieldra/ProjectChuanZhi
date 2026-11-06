@@ -1,15 +1,15 @@
 .conversation-shell {
-  --canvas: #f8f7f4;
-  --sidebar: #efeee9;
-  --panel: #f3f2ee;
-  --surface: #fffefb;
+  --canvas: var(--ss-canvas);
+  --sidebar: var(--ss-sidebar);
+  --panel: var(--ss-panel);
+  --surface: var(--ss-surface);
   --surface-muted: #f1f0ec;
-  --line: #e2e0da;
-  --line-strong: #d4d1ca;
-  --ink: #242320;
-  --muted: #77736c;
-  --accent: #a64b3c;
-  --accent-soft: #f4e8e3;
+  --line: var(--ss-line);
+  --line-strong: var(--ss-line-strong);
+  --ink: var(--ss-ink);
+  --muted: var(--ss-muted);
+  --accent: var(--ss-accent);
+  --accent-soft: var(--ss-accent-soft);
   height: 100dvh;
   display: grid;
   grid-template-columns: 240px minmax(560px, 1fr) 320px;

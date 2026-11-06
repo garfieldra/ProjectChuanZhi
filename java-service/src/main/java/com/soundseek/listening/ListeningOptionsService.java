@@ -29,7 +29,7 @@ public class ListeningOptionsService {
       RecordingRepository recordings,
       RecordingListeningAssetRepository assets,
       AppleItunesClient apple,
-      @Value("${listening.apple.storefront:CN}") String storefront,
+      @Value("${listening.apple.storefront:US}") String storefront,
       @Value("${listening.apple.available-cache-hours:168}") long availableCacheHours,
       @Value("${listening.apple.unavailable-cache-hours:24}") long unavailableCacheHours) {
     this(recordings, assets, apple, Clock.systemUTC(), storefront,

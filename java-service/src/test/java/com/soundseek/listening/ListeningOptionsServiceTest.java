@@ -33,7 +33,7 @@ class ListeningOptionsServiceTest {
     when(artist.getName()).thenReturn("张悬／安溥");
     when(recordings.findByIdWithArtist(recordingId)).thenReturn(Optional.of(recording));
     service = new ListeningOptionsService(
-        recordings, assets, apple, clock, "CN", Duration.ofDays(7), Duration.ofDays(1));
+        recordings, assets, apple, clock, "US", Duration.ofDays(7), Duration.ofDays(1));
   }
 
   @Test
@@ -42,8 +42,8 @@ class ListeningOptionsServiceTest {
     when(cached.isFresh(now)).thenReturn(true);
     when(cached.getStatus()).thenReturn(ListeningAssetStatus.AVAILABLE);
     when(cached.getPreviewUrl()).thenReturn("https://audio-ssl.itunes.apple.com/preview.m4a");
-    when(cached.getProviderTrackUrl()).thenReturn("https://music.apple.com/cn/track");
-    when(assets.findByRecordingIdAndProviderAndStorefront(recordingId, "APPLE_ITUNES", "CN"))
+    when(cached.getProviderTrackUrl()).thenReturn("https://music.apple.com/us/track");
+    when(assets.findByRecordingIdAndProviderAndStorefront(recordingId, "APPLE_ITUNES", "US"))
         .thenReturn(Optional.of(cached));
 
     var result = service.get(recordingId);
@@ -53,16 +53,17 @@ class ListeningOptionsServiceTest {
     assertThat(result.platformLinks()).singleElement().satisfies(link ->
         assertThat(link.url()).contains("music.163.com"));
     verifyNoInteractions(apple);
+    verify(assets, never()).findByRecordingIdAndProviderAndStorefront(recordingId, "APPLE_ITUNES", "CN");
   }
 
   @Test
   void resolvesAndCachesPreviewOnFirstRequest() {
-    when(assets.findByRecordingIdAndProviderAndStorefront(recordingId, "APPLE_ITUNES", "CN"))
+    when(assets.findByRecordingIdAndProviderAndStorefront(recordingId, "APPLE_ITUNES", "US"))
         .thenReturn(Optional.empty());
     when(apple.findPreview("南国的孩子", "张悬／安溥", "城市")).thenReturn(Optional.of(
         new AppleItunesClient.Match("317557863", "南国的孩子", "张悬", "城市",
             "https://audio-ssl.itunes.apple.com/preview.m4a",
-            "https://music.apple.com/cn/track")));
+            "https://music.apple.com/us/track")));
 
     var result = service.get(recordingId);
 
@@ -73,7 +74,7 @@ class ListeningOptionsServiceTest {
 
   @Test
   void degradesToSearchLinkWhenPreviewCannotBeVerified() {
-    when(assets.findByRecordingIdAndProviderAndStorefront(recordingId, "APPLE_ITUNES", "CN"))
+    when(assets.findByRecordingIdAndProviderAndStorefront(recordingId, "APPLE_ITUNES", "US"))
         .thenReturn(Optional.empty());
     when(apple.findPreview(anyString(), anyString(), anyString())).thenReturn(Optional.empty());
 

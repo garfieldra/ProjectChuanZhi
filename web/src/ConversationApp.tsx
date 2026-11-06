@@ -7,10 +7,12 @@ import type { CandidateItem, CandidatePoolResponse } from './candidatePool'
 import { enqueueAgentRun, followAgentRun, progressMetricsText, projectResponseStream, publicProgress, type AgentRunEvent, type AgentRunPlan, type AgentRunProgress } from './agentRunStream'
 import { playbackLabel, useListeningPreview } from './listening'
 import { apiFetch } from './apiClient'
+import { submitRunFollowUp, type RunFollowUp } from './runFollowUp'
 import './conversation.css'
 import './agentWorkspace.css'
 import './tournamentLaunch.css'
 import './conversationWorldcup.css'
+import './workspaceVisual.css'
 
 type Conversation = { id: string; title: string; summary?: string | null; summaryVersion?: number; summaryThroughSequence?: number; summaryUpdatedAt?: string | null; status: 'ACTIVE' | 'ARCHIVED' | 'DELETED'; lastMessageAt: string }
 type MemoryStatus = { estimatedTokens: number; tokenThreshold: number; workingContextBudget: number; providerContextWindow: number; percent: number; unsummarizedTurns: number; turnThreshold: number; retainedRecentTurns: number; autoCompressionReady: boolean; manualCompressionAvailable: boolean; summaryVersion: number; summaryThroughSequence: number; lastCompressedAt?: string | null }
@@ -22,7 +24,6 @@ type CardItem = Pick<CandidateItem, 'recordingId' | 'title' | 'artistName' | 'co
 type CardPayload = { size?: 16 | 32; status?: string; summary?: string; preferenceText?: string; items?: CardItem[] }
 type Tournament = { id: string; status: string; size: number; completedVoteCount: number; currentMatch: { id: string; leftEntryId: string; rightEntryId: string } | null; entries: { id: string; title: string; artistName: string; coverUrl?: string }[] }
 type Report = { runId?: string; status: string; reportId?: string; version?: number; report?: { summary?: string; preferenceDimensions?: { label?: string; summary?: string }[]; songRecommendations?: { title?: string; artistName?: string; reason?: string; searchUrl?: string }[]; artistRecommendations?: { artistName?: string; reason?: string; searchUrl?: string }[]; personalityEasterEgg?: string } }
-type RunFollowUp = { id: string; clientMessageId: string; content: string; status: 'WAITING' | 'DISPATCHED' | 'INTERVENED' | 'CANCELLED'; nextRunId?: string | null; createdAt: string }
 
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await apiFetch(`/api/v1${path}`, options)
@@ -97,19 +98,31 @@ export function ConversationApp({ initialConversationId, initialContent, onHome 
   const runStartedAt = useRef<number | null>(null)
   const wasRunActive = useRef(false)
 
+  const loadedConversation = useRef<string | null>(null)
+  const knownMessages = useRef(new Set<string>())
+  const [newCardIds, setNewCardIds] = useState<Set<string>>(new Set())
+
   const bootStarted = useRef(false)
   useEffect(() => { if (!bootStarted.current) { bootStarted.current = true; void boot() } }, [])
-  useEffect(() => { timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: 'smooth' }) }, [messages, pending, candidateRun, streamingResponse])
+  useEffect(() => { timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: document.documentElement.dataset.reduceMotion === 'true' || window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' }) }, [messages, pending, candidateRun, streamingResponse])
 
   function recordPlan(next: Plan) {
     setPlan(next)
     setPlanHistory(previous => previous.some(item => item.revision === next.revision) ? previous.map(item => item.revision === next.revision ? next : item) : [...previous, next].slice(-8))
   }
 
+  function applyLoadedMessages(conversationId: string, loaded: Message[]) {
+    const sameConversation = loadedConversation.current === conversationId
+    const arrivingCards = loaded.filter(item => !knownMessages.current.has(item.id) && item.type === 'RECOMMENDATION_CARD').map(item => item.id)
+    setNewCardIds(previous => sameConversation ? new Set([...previous, ...arrivingCards]) : new Set())
+    loadedConversation.current = conversationId
+    knownMessages.current = new Set(loaded.map(item => item.id))
+    setMessages(loaded)
+  }
   async function refreshMessages(conversationId = current?.id) {
     if (!conversationId) return
     const loaded = await api<Message[]>(`/conversations/${conversationId}/messages`)
-    setMessages(loaded)
+    applyLoadedMessages(conversationId, loaded)
     const latestRun = [...loaded].reverse().find(message => message.type === 'AGENT_RUN' && message.agentRunId)
     if (latestRun?.agentRunId) await replayRunEvents(latestRun.agentRunId, conversationId)
   }
@@ -162,7 +175,7 @@ export function ConversationApp({ initialConversationId, initialContent, onHome 
   }
 
   async function createConversation() {
-    try { const created = await api<Conversation>('/conversations', { method: 'POST' }); setConversations(previous => [created, ...previous]); setCurrent(created); setMessages([]); setProgress([]); setPlan(null); setPlanHistory([]); setStreamingResponse(''); setCurrentRunId(null); setQueuedFollowUp(null); setInterventionUsed(false); setNotice(''); setMobileSidebarOpen(false); await refreshMemory(created.id) } catch (error) { setNotice(friendlyError(error)) }
+    try { const created = await api<Conversation>('/conversations', { method: 'POST' }); setConversations(previous => [created, ...previous]); setCurrent(created); loadedConversation.current = created.id; knownMessages.current = new Set(); setNewCardIds(new Set()); setMessages([]); setProgress([]); setPlan(null); setPlanHistory([]); setStreamingResponse(''); setCurrentRunId(null); setQueuedFollowUp(null); setInterventionUsed(false); setNotice(''); setMobileSidebarOpen(false); await refreshMemory(created.id) } catch (error) { setNotice(friendlyError(error)) }
   }
   async function open(conversation: Conversation) {
     if (pending || candidateRun) return
@@ -208,8 +221,10 @@ export function ConversationApp({ initialConversationId, initialContent, onHome 
     if (!currentRunId || queuedFollowUp || interventionUsed) return
     const clientId = crypto.randomUUID(); setNotice('')
     try {
-      const queued = await api<RunFollowUp>(`/agent-runs/${currentRunId}/next-message`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': clientId }, body: JSON.stringify({ content }) })
-      setQueuedFollowUp(queued); setDraft('')
+      const result = await submitRunFollowUp(currentRunId, content, clientId)
+      setQueuedFollowUp(result.queued?.status === 'WAITING' ? result.queued : null)
+      if (result.accepted) setDraft('')
+      setNotice(result.notice)
     } catch (error) {
       setDraft(content); setNotice(friendlyError(error))
     }
@@ -233,7 +248,7 @@ export function ConversationApp({ initialConversationId, initialContent, onHome 
       setCurrentRunId(runId)
       await followAgentRun(runId, { onProgress: item => setProgress(previous => [...previous, item]), onPlan: recordPlan, onResponseStarted: () => setStreamingResponse(''), onResponseDelta: (_delta, accumulated) => setStreamingResponse(accumulated) }, 15 * 60_000, cursor)
       const loaded = conversationId ? await api<Message[]>(`/conversations/${conversationId}/messages`) : []
-      if (loaded.length) setMessages(loaded)
+      if (loaded.length && conversationId) applyLoadedMessages(conversationId, loaded)
       const followUp = await runFollowUp(runId)
       if (followUp?.status === 'DISPATCHED' && followUp.nextRunId) {
         runId = followUp.nextRunId; cursor = 0; setQueuedFollowUp(null); setInterventionUsed(false); setProgress([]); setPlan(null); setPlanHistory([]); setStreamingResponse(''); setCollapsed(false)
@@ -309,7 +324,7 @@ export function ConversationApp({ initialConversationId, initialContent, onHome 
       <nav>{visibleConversations.map(conversation => <div className={`conversation-nav-item ${conversation.id === current?.id ? 'active' : ''}`} key={conversation.id}>{renamingId === conversation.id ? <form className="conversation-rename" onSubmit={event => { event.preventDefault(); void renameConversation(conversation) }}><input autoFocus maxLength={80} value={renameDraft} onChange={event => setRenameDraft(event.target.value)} onBlur={() => void renameConversation(conversation)} aria-label="对话名称" /></form> : <button className="conversation-nav-open" onClick={() => void open(conversation)}><span className="conversation-nav-icon" aria-hidden="true" /><span><strong>{conversation.title}</strong><small>{new Date(conversation.lastMessageAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}</small></span></button>}<button className="conversation-nav-more" type="button" aria-label={`管理对话：${conversation.title}`} onClick={() => setConversationMenuId(value => value === conversation.id ? null : conversation.id)}><MoreIcon /></button>{conversationMenuId === conversation.id && <div className="conversation-nav-menu">{deleteConfirmId === conversation.id ? <><p>删除这段对话？</p><div><button type="button" onClick={() => setDeleteConfirmId(null)}>取消</button><button className="danger" type="button" onClick={() => void deleteConversation(conversation)}>删除</button></div></> : <><button type="button" onClick={() => { setRenameDraft(conversation.title); setRenamingId(conversation.id); setConversationMenuId(null) }}>重命名</button><button type="button" onClick={() => void setArchived(conversation, conversation.status !== 'ARCHIVED')}>{conversation.status === 'ARCHIVED' ? '恢复对话' : '归档对话'}</button><button className="danger" type="button" onClick={() => setDeleteConfirmId(conversation.id)}>删除对话</button></>}</div>}</div>)}</nav>
 
     </aside>
-    <section className="conversation-main"><header className="conversation-header"><button className="mobile-menu-toggle" type="button" aria-label="打开会话列表" onClick={() => setMobileSidebarOpen(true)}><MenuIcon /></button><div><p className="eyebrow">当前对话</p><h1>{current?.title || '新的音乐探索'}</h1></div><button className="report-action" type="button" disabled={!current || runActive} onClick={() => void requestExplorationReport()}><ReportIcon /><span>生成报告</span></button></header>{notice && <p className="conversation-notice">{notice}</p>}
+    <section className="conversation-main"><header className="conversation-header"><button className="mobile-menu-toggle" type="button" aria-label="打开会话列表" onClick={() => setMobileSidebarOpen(true)}><MenuIcon /></button><div><p className="eyebrow">当前对话</p><h1>{current?.title || '新的音乐探索'}</h1></div><button className="report-action" aria-label="生成报告" type="button" disabled={!current || runActive} onClick={() => void requestExplorationReport()}><ReportIcon /><span>生成报告</span></button></header>{notice && <p className="conversation-notice">{notice}</p>}
       <section className="conversation-timeline" ref={timelineRef} aria-live="polite">
         {displayMessages.length === 0 && <Welcome onSelect={(text) => setDraft(text)} />}
         {displayMessages.map((message, index) => {
@@ -325,7 +340,7 @@ export function ConversationApp({ initialConversationId, initialContent, onHome 
           else if (message.type === 'REPORT_CARD' && message.cardType === 'EXPLORATION_REPORT') content = <ExplorationReportCard payload={message.cardPayloadJson} conversationId={current?.id} />
           else if (message.type === 'REPORT_CARD') content = <ReportCard payload={message.cardPayloadJson} />
           else content = <article className={`conversation-message ${message.role === 'USER' ? 'user' : 'agent'}`}>{message.role !== 'USER' && <span className="message-agent-mark"><BrandMark /></span>}<MessageBody content={message.content || ''} /></article>
-          return <TimedMessage key={message.id} createdAt={message.createdAt}>{content}</TimedMessage>
+          return <TimedMessage key={message.id} createdAt={message.createdAt} animate={newCardIds.has(message.id)}>{content}</TimedMessage>
         })}
         {candidateRun && <CandidateGenerationCard size={candidateRun.size} preferenceText={candidateRun.preferenceText} onProgress={(item) => setProgress(previous => [...previous, item])} onPlan={recordPlan} onRunId={setCurrentRunId} onCompleted={async payload => { await persistCard('CANDIDATE_POOL_CARD', 'CANDIDATE_POOL', payload); setCandidateRun(null); setCollapsed(true) }} onFailed={message => { setNotice(message); setCandidateRun(null); setCollapsed(true) }} />}
         {streamingResponse && <article className="conversation-message agent streaming-response"><span className="message-agent-mark"><BrandMark /></span><MessageBody content={streamingResponse} /><i className="streaming-response-caret" aria-hidden="true" /></article>}
@@ -376,9 +391,25 @@ export function composerPrimaryAction(runActive: boolean, hasText: boolean, canS
 
 function formatElapsed(value: number) { const seconds = Math.max(0, Math.floor(value / 1000)); return seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}` }
 function formatMessageTime(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) }
-function TimedMessage({ createdAt, children }: { createdAt: string; children: ReactNode }) { const label = formatMessageTime(createdAt); return <div className="conversation-message-shell">{label && <time dateTime={createdAt}>{label}</time>}{children}</div> }
+function TimedMessage({ createdAt, children, animate = false }: { createdAt: string; children: ReactNode; animate?: boolean }) { const label = formatMessageTime(createdAt); return <div className={`conversation-message-shell${animate ? ' is-new-card' : ''}`}>{label && <time dateTime={createdAt}>{label}</time>}{children}</div> }
 
-function MessageBody({ content }: { content: string }) { const blocks = content.split(/\n{2,}/).filter(Boolean); const inline = (block: string) => block.split(/(\*\*[^*]+\*\*)/g).map((part, partIndex) => part.startsWith('**') && part.endsWith('**') ? <strong key={partIndex}>{part.slice(2, -2)}</strong> : <span key={partIndex}>{part}</span>); return <div className="message-body">{blocks.map((block, index) => { const heading = block.match(/^#{1,3}\s+(.+)$/s); return heading ? <h3 key={index}>{inline(heading[1])}</h3> : <p key={index}>{inline(block)}</p> })}</div> }
+export function MessageBody({ content }: { content: string }) {
+  const blocks: { heading: boolean; text: string }[] = []
+  let paragraph: string[] = []
+  const flush = () => {
+    if (paragraph.length) blocks.push({ heading: false, text: paragraph.join('\n') })
+    paragraph = []
+  }
+  for (const line of content.split(/\r?\n/)) {
+    const heading = line.match(/^#{1,3}[ \t]+(.+)$/)
+    if (heading) { flush(); blocks.push({ heading: true, text: heading[1] }) }
+    else if (!line.trim()) flush()
+    else paragraph.push(line)
+  }
+  flush()
+  const inline = (text: string) => text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => part.startsWith('**') && part.endsWith('**') ? <strong key={index}>{part.slice(2, -2)}</strong> : <span key={index}>{part}</span>)
+  return <div className="message-body">{blocks.map((block, index) => block.heading ? <h3 key={index}>{inline(block.text)}</h3> : <p key={index}>{inline(block.text)}</p>)}</div>
+}
 
 
 function PlusIcon() { return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" /></svg> }
@@ -480,7 +511,7 @@ function MusicRecommendationsCard({ payload, conversationId }: { payload?: strin
       const feedbackKey = `song-${item.recordingId || index}`
       const playback = item.recordingId ? listening.stateFor(item.recordingId) : null
       const content = <><MusicCover url={item.coverUrl} title={item.title} /><span><strong>{item.title}</strong><small>{item.artistName}{item.albumTitle ? ` · ${item.albumTitle}` : ''}</small><em>{item.reason}</em>{playback && <span className={`recommendation-playback ${playback.phase}`}>{playbackLabel(playback.phase)}</span>}</span></>
-      return <li key={`${feedbackKey}-${index}`}>{item.recordingId ? <button className="music-recommendation-main" type="button" onMouseEnter={() => void listening.prefetch(item.recordingId!)} onFocus={() => void listening.prefetch(item.recordingId!)} onClick={() => void listening.toggle(item.recordingId!)}>{content}</button> : <div className="music-recommendation-main">{content}</div>}<div className="music-recommendation-actions"><small>{item.verificationStatus === 'MUSICBRAINZ_VERIFIED' ? 'MusicBrainz 已核验' : '公开资料发现'}</small>{item.searchUrl && <a href={item.searchUrl} target="_blank" rel="noreferrer">去平台</a>}<button onClick={() => void sendFeedback('SONG', feedbackKey, { recordingId: item.recordingId, title: item.title, artistName: item.artistName }, 'LIKE')}>喜欢</button><button onClick={() => void sendFeedback('SONG', feedbackKey, { recordingId: item.recordingId, title: item.title, artistName: item.artistName }, 'DISLIKE')}>不适合</button>{feedback[feedbackKey] && <small>已记录</small>}</div></li>
+      return <li key={`${feedbackKey}-${index}`} className={item.recordingId && listening.active?.id === item.recordingId ? 'is-active' : undefined}>{item.recordingId ? <button className="music-recommendation-main" type="button" onMouseEnter={() => void listening.prefetch(item.recordingId!)} onFocus={() => void listening.prefetch(item.recordingId!)} onClick={() => void listening.toggle(item.recordingId!)}>{content}</button> : <div className="music-recommendation-main">{content}</div>}<div className="music-recommendation-actions"><small>{item.verificationStatus === 'MUSICBRAINZ_VERIFIED' ? 'MusicBrainz 已核验' : '公开资料发现'}</small>{item.searchUrl && <a href={item.searchUrl} target="_blank" rel="noreferrer">去平台</a>}<button onClick={() => void sendFeedback('SONG', feedbackKey, { recordingId: item.recordingId, title: item.title, artistName: item.artistName }, 'LIKE')}>喜欢</button><button onClick={() => void sendFeedback('SONG', feedbackKey, { recordingId: item.recordingId, title: item.title, artistName: item.artistName }, 'DISLIKE')}>不适合</button>{feedback[feedbackKey] && <small>已记录</small>}</div></li>
     })}</ol></> : null}
     {displayArtists.length ? <><h3>艺人</h3><ol className="music-artist-list">{displayArtists.map((item, index) => { const key=`artist-${item.artistId || item.artistName || index}`; return <li key={key}><a href={item.searchUrl || item.sourceUrl} target="_blank" rel="noreferrer"><strong>{item.artistName}</strong><small>{item.reason}</small></a><div className="music-recommendation-actions"><small>{item.verificationStatus === 'MUSICBRAINZ_VERIFIED' ? 'MusicBrainz 已核验' : '公开资料发现'}</small><button onClick={() => void sendFeedback('ARTIST', key, { artistId: item.artistId, artistName: item.artistName }, 'LIKE')}>喜欢</button><button onClick={() => void sendFeedback('ARTIST', key, { artistId: item.artistId, artistName: item.artistName }, 'DISLIKE')}>不适合</button>{feedback[key] && <small>已记录</small>}</div></li> })}</ol></> : null}
     {value.sources?.length ? <details className="music-recommendation-sources"><summary>查看推荐依据</summary>{value.sources.map((item, index) => <a key={`${item.url}-${index}`} href={item.url} target="_blank" rel="noreferrer">{item.title || '公开资料'}</a>)}</details> : null}

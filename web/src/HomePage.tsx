@@ -63,7 +63,7 @@ export function HomePage({ onExplore, preloadWorkspace }: Props) {
           <h1 id="home-heading"><span>总有一种声音，</span><span>与你<em>不期而遇。</em></span></h1>
           <p>从一首喜欢的歌出发，发现新的作品，<br className="home-desktop-break" />也更懂自己的音乐偏好。</p>
         </div>
-        <figure className="home-artwork"><img src="/images/soundseek-vinyl.webp" width="1612" height="976" alt="砖红色寻声唱片封套，搭配黑胶唱片与一枝干花" fetchPriority="high" decoding="async" /></figure>
+        <figure className="home-artwork"><img src="/images/soundseek-vinyl.webp" width="1612" height="976" alt="砖红色寻声唱片封套，搭配黑胶唱片与一枝干花" {...{ fetchpriority: 'high' }} decoding="async" /></figure>
       </section>
       <section className="home-entry" aria-label="开始一次音乐探索">
         <form onSubmit={event => void submit(event)} aria-busy={connecting}>

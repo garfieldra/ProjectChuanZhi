@@ -1,0 +1,23 @@
+/* Shared visual contract: docs/workspace-visual-system.md. */
+:root {
+  --ss-canvas: #f8f7f4;
+  --ss-sidebar: #efeee9;
+  --ss-panel: #f3f2ee;
+  --ss-surface: #fffefb;
+  --ss-ink: #242320;
+  --ss-muted: #6b675f;
+  --ss-line: #dedbd4;
+  --ss-line-strong: #c9c4bb;
+  --ss-accent: #a64b3c;
+  --ss-accent-soft: #f4e8e3;
+  --ss-player: #252522;
+  --ss-player-ink: #faf8f3;
+  --ss-player-muted: #c5c0b6;
+  --ss-font-ui: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+  --ss-font-editorial: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
+  --ss-space-1: 4px; --ss-space-2: 8px; --ss-space-3: 12px; --ss-space-4: 16px;
+  --ss-space-6: 24px; --ss-space-8: 32px; --ss-space-12: 48px;
+  --ss-radius-control: 8px; --ss-radius-panel: 16px;
+  --ss-motion-fast: 140ms; --ss-motion-menu: 180ms; --ss-motion-enter: 240ms;
+  --ss-ease: cubic-bezier(.2,.7,.2,1);
+}

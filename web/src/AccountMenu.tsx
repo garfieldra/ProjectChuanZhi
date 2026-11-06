@@ -7,7 +7,13 @@ import './settings.css'
 type Props = { session: AuthSession; onClose: () => void; onSessionChange: (session: AuthSession, reason: 'profile' | 'logout') => void; returnFocusRef?: RefObject<HTMLElement> }
 const sections = ['个人资料', '音乐偏好与记忆', '播放与外观', '账户与数据']
 export function AccountMenu({ session, onClose, onSessionChange, returnFocusRef }: Props) {
-  const [section, setSection] = useState(-1)
+  const [section, updateSection] = useState(-1)
+  const [direction, setDirection] = useState('forward')
+  function setSection(next: number) {
+    const depth = (value: number) => value === -1 ? 0 : value === -2 ? 1 : 2
+    setDirection(depth(next) < depth(section) ? 'back' : 'forward')
+    updateSection(next)
+  }
   const [name, setName] = useState(session.displayName || '')
   const [savedName, setSavedName] = useState(session.displayName || '')
   const [busy, setBusy] = useState(false)
@@ -80,6 +86,7 @@ export function AccountMenu({ session, onClose, onSessionChange, returnFocusRef 
       event.preventDefault(); buttons[next]?.focus()
     }
   }}>
+    <div key={section} className="account-menu-stage" data-direction={direction}>
     {section === -1 ? <>
       <div className="account-menu-identity"><span className="account-menu-avatar">{session.avatarUrl ? <img src={session.avatarUrl} alt="" /> : (savedName || '声').slice(0, 1)}</span><span><strong>{savedName}</strong><small>{session.email?.endsWith('@users.soundseek.local') ? 'GitHub 账户' : session.email}</small></span></div>
       <div className="account-menu-items">
@@ -99,6 +106,7 @@ export function AccountMenu({ session, onClose, onSessionChange, returnFocusRef 
         <div className="settings-feedback" aria-live="polite">{notice && <p role="status">{notice}</p>}{error && <p className="settings-error" role="alert">{error}</p>}</div>
       </div>}
     </>}
+    </div>
   </section>
 }
 function SettingsIcon({ index }: { index: number }) { const paths = ['M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4 21v-2a8 6 0 0 1 16 0v2', 'M12 21 3 12a5 5 0 0 1 9-6 5 5 0 0 1 9 6Z', 'M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6', 'M20 6c0 2-4 3-8 3S4 8 4 6s4-3 8-3 8 1 8 3ZM4 6v12c0 2 4 3 8 3s8-1 8-3V6M4 12c0 2 4 3 8 3s8-1 8-3']; return <svg viewBox="0 0 24 24" aria-hidden="true"><path d={paths[index]} /></svg> }

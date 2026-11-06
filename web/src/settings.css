@@ -78,3 +78,18 @@
 .account-popover .settings-description { color: #77736c; margin-top: 0; }
 .account-popover button:disabled { opacity: .55; cursor: wait; }
 @media(max-width:680px) { .conversation-shell .conversation-composer { padding-bottom: 66px; } }
+
+/* Shared account chrome, also used by the homepage trigger. */
+.account-popover { border-radius: var(--ss-radius-panel); background: var(--ss-surface); color: var(--ss-ink); font-family: var(--ss-font-ui); overflow-x: hidden; animation: ss-menu-open var(--ss-motion-menu) var(--ss-ease); }
+.account-popover .account-menu-identity small, .account-popover .settings-description, .account-popover .settings-row small, .account-popover .settings-avatar-hint { font-size: 12px; color: var(--ss-muted); }
+.account-popover .account-menu-items > button { min-height: 44px; border-radius: var(--ss-radius-control); transition: background var(--ss-motion-fast), color var(--ss-motion-fast); }
+.account-popover .account-menu-items > button:hover { color: var(--ss-accent); background: var(--ss-accent-soft); }
+.account-popover :is(button, a, input):focus-visible { outline: 2px solid var(--ss-accent); outline-offset: 2px; }
+.account-menu-stage { animation: ss-menu-forward var(--ss-motion-menu) var(--ss-ease); }
+.account-menu-stage[data-direction=back] { animation-name: ss-menu-back; }
+.account-popover .settings-row input[type=checkbox]::after { transition: left var(--ss-motion-fast); }
+.account-popover .settings-row input[type=checkbox] { transition: background var(--ss-motion-fast); }
+@keyframes ss-menu-open { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ss-menu-forward { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes ss-menu-back { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+@media (prefers-reduced-motion: reduce) { .account-popover, .account-popover * { animation: none !important; transition: none !important; } }
