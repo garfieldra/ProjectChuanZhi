@@ -124,3 +124,10 @@ export function followAgentRun<T>(runId: string, callbacks: Callbacks = {}, time
     connect()
   })
 }
+
+// Reconnects may prepend a current-plan snapshot before older durable events.
+// Keep one entry per revision and render history in revision order.
+export function normalizePlanHistory(plans: AgentRunPlan[]): AgentRunPlan[] {
+  return [...new Map(plans.map(plan => [plan.revision, plan])).values()]
+    .sort((left, right) => left.revision - right.revision).slice(-8)
+}
