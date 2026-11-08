@@ -1,7 +1,7 @@
 apiVersion: 1
 providers:
-  - name: IndieSoundQuest
-    folder: IndieSoundQuest
+  - name: SoundSeek
+    folder: SoundSeek
     type: file
     options:
       path: /var/lib/grafana/dashboards

@@ -1,0 +1,3 @@
+package com.soundseek.conversation.repository;
+import com.soundseek.conversation.domain.*; import java.util.*; import org.springframework.data.jpa.repository.*;
+public interface ConversationMessageRepository extends JpaRepository<ConversationMessage,UUID>{ List<ConversationMessage> findByConversationIdOrderBySequenceNumberAsc(UUID conversationId); Optional<ConversationMessage> findByConversationIdAndClientMessageId(UUID conversationId,UUID clientMessageId); Optional<ConversationMessage> findTopByConversationIdOrderBySequenceNumberDesc(UUID conversationId); Optional<ConversationMessage> findByConversationIdAndAgentRunIdAndType(UUID conversationId,UUID agentRunId,ConversationMessageType type); }

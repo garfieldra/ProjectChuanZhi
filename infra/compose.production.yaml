@@ -1,4 +1,4 @@
-name: indie-sound-quest
+name: soundseek
 
 services:
   web:
@@ -32,6 +32,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD}
       SPRING_DATA_REDIS_URL: redis://redis:6379/0
       AGENT_INTERNAL_BASE_URL: http://agent-service:8000
+      APPLE_ITUNES_STOREFRONT: ${APPLE_ITUNES_STOREFRONT:-US}
       AGENT_INTERNAL_SERVICE_TOKEN: ${AGENT_INTERNAL_SERVICE_TOKEN}
     depends_on:
       mysql:

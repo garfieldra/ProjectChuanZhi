@@ -1,0 +1,70 @@
+/* Homepage navigation stays light; the exploration action has the only filled surface. */
+.home-header { position: relative; z-index: 5; gap: 28px; }
+.home-header .home-navigation { margin-left: auto; gap: 30px; }
+.home-header .home-nav-link { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 0; border: 0; background: transparent; color: #77736c; font-size: 15px; font-weight: 400; white-space: nowrap; }
+.home-header .home-nav-link:hover, .home-header .home-nav-link[aria-expanded="true"] { color: var(--home-accent); }
+.home-header .home-nav-link:disabled { cursor: wait; opacity: .65; }
+.home-chevron { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; transition: transform 160ms ease; }
+[aria-expanded="true"] > .home-chevron { transform: rotate(180deg); }
+.home-nav-disclosure { position: relative; }
+.home-header-actions { display: flex; align-items: center; gap: 12px; }
+.home-header .home-enter { min-height: 44px; padding: 11px 18px; gap: 14px; border: 1px solid var(--home-accent); border-radius: var(--radius-action); background: var(--home-accent); color: #fffdf8; font-size: 14px; white-space: nowrap; transition: background 160ms; }
+.home-header .home-enter:hover { background: #913e31; color: #fffdf8; }
+.home-enter svg { width: 19px; height: 19px; }
+.home-nav-popover { position: absolute; top: calc(100% + 12px); z-index: 10; padding: 10px; border: 1px solid var(--home-line); border-radius: 20px; background: #fcfbf8; }
+.home-modes { left: -22px; width: 360px; }
+.home-modes > button { width: 100%; display: flex; align-items: center; gap: 14px; padding: 17px 12px; border: 0; border-radius: 12px; background: transparent; color: var(--home-ink); text-align: left; }
+.home-modes > button:hover, .home-modes > button:focus-visible { background: #f0ede7; }
+.home-modes > button:disabled { cursor: wait; opacity: .55; }
+.home-mode-index { color: #a49a8c; font: 400 13px/1.5 Georgia, serif; }
+.home-modes > button > span:nth-child(2) { flex: 1; display: grid; gap: 5px; }
+.home-modes strong { font: 600 19px/1.4 var(--home-serif); }
+.home-modes small { color: var(--home-muted); font-size: 12px; line-height: 1.6; }
+.home-modes > button > svg { width: 18px; height: 18px; color: var(--home-accent); }
+.home-header .home-account-trigger { gap: 9px; color: var(--home-ink); }
+.home-avatar { display: grid; place-items: center; width: 30px; height: 30px; flex: none; overflow: hidden; border: 1px solid #ddd6cd; border-radius: 50%; background: #eee9e1; color: #79584c; font-size: 13px; }
+.home-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.home-account-name { max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
+.home-account-panel { right: 0; width: 260px; padding: 22px; }
+.home-account-panel > strong, .home-account-panel > small { display: block; overflow-wrap: anywhere; }
+.home-account-panel > strong { font-size: 15px; font-weight: 500; }
+.home-account-panel > small { margin-top: 5px; color: var(--home-muted); font-size: 12px; }
+.home-account-panel > button { width: 100%; margin-top: 18px; padding: 14px 0 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 0; border-top: 1px solid var(--home-line); background: transparent; color: var(--home-accent); font-size: 14px; }
+.home-account-panel > button svg { width: 18px; height: 18px; }
+.home-menu-toggle { display: none; }
+.home-account-error { position: absolute; top: 100%; right: 0; max-width: 340px; margin: 8px 0 0; padding: 10px 14px; border: 1px solid #e6cec5; border-radius: 12px; background: #fcf6f2; color: #943c30; font-size: 12px; line-height: 1.6; }
+@media (max-width: 1100px) {
+  .home-header { gap: 22px; }
+  .home-header .home-navigation { gap: 22px; }
+}
+@media (max-width: 850px) {
+  .home-header { gap: 12px; }
+  .home-header-actions { margin-left: auto; gap: 8px; }
+  .home-header .home-navigation { display: none; }
+  .home-header .home-navigation.is-open { position: absolute; top: calc(100% + 8px); left: 0; right: 0; display: flex; flex-direction: column; align-items: stretch; gap: 0; margin: 0; padding: 12px; border: 1px solid var(--home-line); border-radius: 20px; background: #fcfbf8; }
+  .home-header .home-nav-link { width: 100%; min-height: 46px; justify-content: space-between; padding: 10px 12px; font-size: 14px; }
+  .home-header nav > a:first-child { display: inline-flex; }
+  .home-header .home-account-trigger { justify-content: flex-start; }
+  .home-account-trigger > .home-chevron { margin-left: auto; }
+  .home-account-name { max-width: 180px; }
+  .home-menu-toggle { width: 36px; height: 36px; flex: none; display: grid; place-items: center; padding: 8px; border: 0; border-radius: 50%; background: transparent; color: var(--home-ink); }
+  .home-menu-toggle:hover, .home-menu-toggle[aria-expanded="true"] { background: #ede9e2; }
+  .home-menu-toggle svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+  .home-nav-popover { position: static; width: 100%; margin: 0 0 6px; border: 0; border-radius: 12px; background: #f4f1eb; }
+  .home-modes { padding: 4px; }
+  .home-modes > button { padding: 12px 9px; gap: 10px; }
+  .home-modes strong { font-size: 17px; }
+  .home-modes small { font-size: 11px; }
+  .home-account-panel { padding: 16px; }
+}
+@media (max-width: 680px) {
+  .home-header .home-enter { min-height: 38px; padding: 8px 12px; gap: 7px; font-size: 12px; }
+  .home-header .home-enter svg { width: 16px; height: 16px; }
+  .home-brand > small { font-size: 11px; }
+  .home-brand { gap: 7px; }
+}
+@media (max-width: 359px) {
+  .home-header-actions { gap: 4px; }
+  .home-header .home-enter { padding-inline: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .home-chevron { transition: none; } }

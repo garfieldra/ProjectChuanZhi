@@ -1,10 +1,11 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ConversationApp } from './ConversationApp'
+import { SoundSeekApp } from './SoundSeekApp'
+import './designTokens.css'
 import './styles.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ConversationApp />
+    <SoundSeekApp />
   </StrictMode>,
 )

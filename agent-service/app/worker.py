@@ -228,10 +228,10 @@ async def execute(message: aio_pika.IncomingMessage):
             await message.nack(requeue=True)
 
 async def main():
-    url=os.getenv("RABBITMQ_URL","amqp://indiesoundquest:indiesoundquest@rabbitmq/")
+    url=os.getenv("RABBITMQ_URL","amqp://soundseek:soundseek@rabbitmq/")
     connection=await aio_pika.connect_robust(url)
     channel=await connection.channel(); await channel.set_qos(prefetch_count=int(os.getenv("AGENT_WORKER_PREFETCH","2")))
-    queue=await channel.declare_queue("isq.agent-runs.v1",durable=True,arguments={"x-dead-letter-exchange":"isq.dlx","x-dead-letter-routing-key":"agent-run.failed"})
+    queue=await channel.declare_queue("soundseek.agent-runs.v1",durable=True,arguments={"x-dead-letter-exchange":"soundseek.dlx","x-dead-letter-routing-key":"agent-run.failed"})
     await queue.consume(execute)
     await asyncio.Future()
 
