@@ -15,13 +15,17 @@ class GuestAssetMergeServiceTest {
     verifyNoInteractions(jdbc);
   }
 
-  @Test void movesOwnedAssetsWithoutDeletingSourceData() {
+  @Test void movesOwnedAssetsAndDeduplicatesOnlySavedSongs() {
     var jdbc = mock(JdbcTemplate.class);
     when(jdbc.queryForObject(contains("COUNT(*)"), eq(Integer.class), any())).thenReturn(1);
-    new GuestAssetMergeService(jdbc).merge(UUID.randomUUID(), UUID.randomUUID());
+    var source = UUID.randomUUID();
+    var target = UUID.randomUUID();
+    new GuestAssetMergeService(jdbc).merge(source, target);
     var writes = mockingDetails(jdbc).getInvocations().stream().filter(call -> call.getMethod().getName().equals("update")).toList();
-    assertEquals(7, writes.size());
-    assertTrue(writes.stream().allMatch(call -> ((String) call.getArgument(0)).startsWith("UPDATE")));
+    var deletes = writes.stream().filter(call -> ((String) call.getArgument(0)).startsWith("DELETE")).toList();
+    assertEquals(1, deletes.size());
+    assertTrue(((String) deletes.getFirst().getArgument(0)).contains("saved_song source JOIN saved_song target"));
+    verify(jdbc).update(startsWith("UPDATE saved_song"), eq(target.toString()), eq(source.toString()));
     assertTrue(writes.stream().anyMatch(call -> ((String) call.getArgument(0)).contains("LEFT JOIN preference_event")));
   }
 }

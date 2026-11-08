@@ -1,3 +1,5 @@
+import { MusicLibrary } from './MusicLibraryPanel'
+import { MusicLibraryProvider, useMusicLibrary, SaveSongButton, type SavedSong } from './musicLibraryStore'
 import { VinylPlayer } from './VinylPlayer'
 import { AccountDialog } from './AccountDialog'
 import type { AuthSession } from './auth'
@@ -5,7 +7,7 @@ import { BrandMark } from './BrandMark'
 import { FormEvent, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { CandidateItem, CandidatePoolResponse } from './candidatePool'
 import { enqueueAgentRun, followAgentRun, progressMetricsText, projectResponseStream, publicProgress, type AgentRunEvent, type AgentRunPlan, type AgentRunProgress } from './agentRunStream'
-import { playbackLabel, useListeningPreview } from './listening'
+import { playbackLabel } from './listening'
 import { apiFetch } from './apiClient'
 import { submitRunFollowUp, type RunFollowUp } from './runFollowUp'
 import './conversation.css'
@@ -62,7 +64,34 @@ async function queuedRun<T>(path:string,options:RequestInit,onProgress:(item:Pro
 
 export type ConversationAppProps = { initialConversationId?: string; initialContent?: string; onHome?: () => void }
 
-export function ConversationApp({ initialConversationId, initialContent, onHome }: ConversationAppProps = {}) {
+export function ConversationApp(props: ConversationAppProps = {}) { return <MusicLibraryProvider><ConversationWorkspace {...props} /></MusicLibraryProvider> }
+
+function ConversationWorkspace({ initialConversationId, initialContent, onHome }: ConversationAppProps) {
+  const libraryScroll = useRef(0)
+  const [libraryOpen,setLibraryOpen] = useState(() => new URLSearchParams(location.search).get('view') === 'music')
+  function showLibrary(open: boolean) {
+    if(open) libraryScroll.current=timelineRef.current?.scrollTop||0
+    else requestAnimationFrame(()=>timelineRef.current?.scrollTo({top:libraryScroll.current,behavior:'instant'}))
+    setLibraryOpen(open); setMobileSidebarOpen(false)
+    const url=new URL(location.href); if(open) url.searchParams.set('view','music'); else url.searchParams.delete('view')
+    history.pushState({},'',url)
+  }
+  useEffect(()=>{
+    const pop=()=>{
+      const open=new URLSearchParams(location.search).get('view')==='music'
+      if(open)libraryScroll.current=timelineRef.current?.scrollTop||0
+      setLibraryOpen(open)
+      if(!open)requestAnimationFrame(()=>timelineRef.current?.scrollTo({top:libraryScroll.current,behavior:'instant'}))
+    }
+    addEventListener('popstate',pop);return()=>removeEventListener('popstate',pop)
+  },[])
+  async function sourceSong(song: SavedSong) {
+    if(!song.sourceAvailable||!song.sourceConversationId)return
+    const hash=`#message-${song.sourceMessageId}`
+    if(song.sourceConversationId===current?.id){showLibrary(false);history.replaceState({},'',location.pathname+location.search+hash);requestAnimationFrame(()=>document.getElementById(`message-${song.sourceMessageId}`)?.scrollIntoView({block:'start'}))}
+    else window.open(`/explore?conversation=${encodeURIComponent(song.sourceConversationId)}${hash}`,'_blank','noopener')
+  }
+
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [current, setCurrent] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<Message[]>(() => initialContent ? [{ id: 'homepage-entry', role: 'USER', type: 'USER_TEXT', content: initialContent, status: 'COMPLETED', sequenceNumber: 0, createdAt: new Date().toISOString() }] : [])
@@ -102,9 +131,14 @@ export function ConversationApp({ initialConversationId, initialContent, onHome 
   const knownMessages = useRef(new Set<string>())
   const [newCardIds, setNewCardIds] = useState<Set<string>>(new Set())
 
+  const sourcePositioned = useRef(false)
+  useEffect(()=>{
+    if(sourcePositioned.current || !messages.length || !location.hash.startsWith('#message-'))return
+    const target=document.getElementById(location.hash.slice(1));if(target){sourcePositioned.current=true;target.scrollIntoView({block:'start'})}
+  },[messages])
   const bootStarted = useRef(false)
   useEffect(() => { if (!bootStarted.current) { bootStarted.current = true; void boot() } }, [])
-  useEffect(() => { timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: document.documentElement.dataset.reduceMotion === 'true' || window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' }) }, [messages, pending, candidateRun, streamingResponse])
+  useEffect(() => { if(libraryOpen || location.hash.startsWith('#message-'))return; timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: document.documentElement.dataset.reduceMotion === 'true' || window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' }) }, [messages, pending, candidateRun, streamingResponse])
 
   function recordPlan(next: Plan) {
     setPlan(next)
@@ -257,6 +291,7 @@ export function ConversationApp({ initialConversationId, initialContent, onHome 
   }
   async function sendContent(content: string) {
     if (!content || !current || candidateRun) return
+    if(location.hash.startsWith('#message-'))history.replaceState({},'',location.pathname+location.search)
     if (pending) { await queueNextMessage(content); return }
     const clientId = crypto.randomUUID(); const optimistic: Message = { id: clientId, role: 'USER', type: 'USER_TEXT', content, status: 'COMPLETED', sequenceNumber: Date.now(), createdAt: new Date().toISOString() }
     setMessages(previous => [...previous, optimistic]); setDraft(''); setPending(true); setProgress([]); setPlan(null); setPlanHistory([]); setStreamingResponse(''); setCollapsed(false); setNotice('')
@@ -318,13 +353,14 @@ export function ConversationApp({ initialConversationId, initialContent, onHome 
     {mobileSidebarOpen && <button className="conversation-sidebar-scrim" type="button" aria-label="关闭会话列表" onClick={() => setMobileSidebarOpen(false)} />}
     <aside className={`conversation-sidebar ${mobileSidebarOpen ? 'open' : ''}`}>
       <a className="conversation-brand" href="/" aria-label="返回寻声首页" onClick={event => { if (onHome && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { event.preventDefault(); onHome() } }}><BrandMark /><span><strong>寻声</strong><small>SoundSeek · 音乐探索</small></span></a>
-      <button className="new-conversation" onClick={() => void createConversation()} disabled={runActive}><PlusIcon /><span>新建对话</span></button>
+      <button className="new-conversation" onClick={() => { if(libraryOpen)showLibrary(false); void createConversation() }} disabled={runActive}><PlusIcon /><span>新建对话</span></button>
+      <button className="library-nav" type="button" aria-current={libraryOpen ? 'page' : undefined} onClick={()=>showLibrary(!libraryOpen)}><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 4h14v17l-7-4-7 4V4Z" /></svg><span>我的音乐</span></button>
       <div className="conversation-list-tools"><input value={conversationSearch} onChange={event => setConversationSearch(event.target.value)} placeholder="搜索对话" aria-label="搜索对话" /><button type="button" className={showArchived ? 'active' : ''} onClick={() => setShowArchived(value => !value)}>{showArchived ? '返回最近' : '归档'}</button></div>
       <p className="conversation-label">{showArchived ? '已归档对话' : '最近对话'}</p>
-      <nav>{visibleConversations.map(conversation => <div className={`conversation-nav-item ${conversation.id === current?.id ? 'active' : ''}`} key={conversation.id}>{renamingId === conversation.id ? <form className="conversation-rename" onSubmit={event => { event.preventDefault(); void renameConversation(conversation) }}><input autoFocus maxLength={80} value={renameDraft} onChange={event => setRenameDraft(event.target.value)} onBlur={() => void renameConversation(conversation)} aria-label="对话名称" /></form> : <button className="conversation-nav-open" onClick={() => void open(conversation)}><span className="conversation-nav-icon" aria-hidden="true" /><span><strong>{conversation.title}</strong><small>{new Date(conversation.lastMessageAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}</small></span></button>}<button className="conversation-nav-more" type="button" aria-label={`管理对话：${conversation.title}`} onClick={() => setConversationMenuId(value => value === conversation.id ? null : conversation.id)}><MoreIcon /></button>{conversationMenuId === conversation.id && <div className="conversation-nav-menu">{deleteConfirmId === conversation.id ? <><p>删除这段对话？</p><div><button type="button" onClick={() => setDeleteConfirmId(null)}>取消</button><button className="danger" type="button" onClick={() => void deleteConversation(conversation)}>删除</button></div></> : <><button type="button" onClick={() => { setRenameDraft(conversation.title); setRenamingId(conversation.id); setConversationMenuId(null) }}>重命名</button><button type="button" onClick={() => void setArchived(conversation, conversation.status !== 'ARCHIVED')}>{conversation.status === 'ARCHIVED' ? '恢复对话' : '归档对话'}</button><button className="danger" type="button" onClick={() => setDeleteConfirmId(conversation.id)}>删除对话</button></>}</div>}</div>)}</nav>
+      <nav>{visibleConversations.map(conversation => <div className={`conversation-nav-item ${conversation.id === current?.id ? 'active' : ''}`} key={conversation.id}>{renamingId === conversation.id ? <form className="conversation-rename" onSubmit={event => { event.preventDefault(); void renameConversation(conversation) }}><input autoFocus maxLength={80} value={renameDraft} onChange={event => setRenameDraft(event.target.value)} onBlur={() => void renameConversation(conversation)} aria-label="对话名称" /></form> : <button className="conversation-nav-open" onClick={() => { if(libraryOpen)showLibrary(false); void open(conversation) }}><span className="conversation-nav-icon" aria-hidden="true" /><span><strong>{conversation.title}</strong><small>{new Date(conversation.lastMessageAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}</small></span></button>}<button className="conversation-nav-more" type="button" aria-label={`管理对话：${conversation.title}`} onClick={() => setConversationMenuId(value => value === conversation.id ? null : conversation.id)}><MoreIcon /></button>{conversationMenuId === conversation.id && <div className="conversation-nav-menu">{deleteConfirmId === conversation.id ? <><p>删除这段对话？</p><div><button type="button" onClick={() => setDeleteConfirmId(null)}>取消</button><button className="danger" type="button" onClick={() => void deleteConversation(conversation)}>删除</button></div></> : <><button type="button" onClick={() => { setRenameDraft(conversation.title); setRenamingId(conversation.id); setConversationMenuId(null) }}>重命名</button><button type="button" onClick={() => void setArchived(conversation, conversation.status !== 'ARCHIVED')}>{conversation.status === 'ARCHIVED' ? '恢复对话' : '归档对话'}</button><button className="danger" type="button" onClick={() => setDeleteConfirmId(conversation.id)}>删除对话</button></>}</div>}</div>)}</nav>
 
     </aside>
-    <section className="conversation-main"><header className="conversation-header"><button className="mobile-menu-toggle" type="button" aria-label="打开会话列表" onClick={() => setMobileSidebarOpen(true)}><MenuIcon /></button><div><p className="eyebrow">当前对话</p><h1>{current?.title || '新的音乐探索'}</h1></div><button className="report-action" aria-label="生成报告" type="button" disabled={!current || runActive} onClick={() => void requestExplorationReport()}><ReportIcon /><span>生成报告</span></button></header>{notice && <p className="conversation-notice">{notice}</p>}
+    <section className="conversation-main" hidden={libraryOpen}><header className="conversation-header"><button className="mobile-menu-toggle" type="button" aria-label="打开会话列表" onClick={() => setMobileSidebarOpen(true)}><MenuIcon /></button><div><p className="eyebrow">当前对话</p><h1>{current?.title || '新的音乐探索'}</h1></div><button className="report-action" aria-label="生成报告" type="button" disabled={!current || runActive} onClick={() => void requestExplorationReport()}><ReportIcon /><span>生成报告</span></button></header>{notice && <p className="conversation-notice">{notice}</p>}
       <section className="conversation-timeline" ref={timelineRef} aria-live="polite">
         {displayMessages.length === 0 && <Welcome onSelect={(text) => setDraft(text)} />}
         {displayMessages.map((message, index) => {
@@ -332,7 +368,7 @@ export function ConversationApp({ initialConversationId, initialContent, onHome 
           if (message.type === 'TOURNAMENT_CARD' && message.cardType === 'WORLD_CUP_LAUNCH') content = <TournamentLaunchCard payload={message.cardPayloadJson} onStart={startCandidateRun} />
           else if (message.type === 'CANDIDATE_POOL_CARD') content = <CandidatePoolCard cardMessageId={message.id} alreadyStarted={displayMessages.some(candidateTournamentCardFor(message.id)) || legacyCandidateHasFollowingTournament(displayMessages, index)} payload={message.cardPayloadJson} onRebuild={startCandidateRun} onTournamentCreated={(tournamentId, size, sourceCandidateMessageId) => void persistCard('TOURNAMENT_CARD', 'TOURNAMENT', { tournamentId, size, status: 'READY', sourceCandidateMessageId })} />
           else if (message.type === 'CLARIFICATION_CARD') content = <ClarificationCard payload={message.cardPayloadJson} agentRunId={findWaitingRunId(messages, messages.findIndex(item => item.id === message.id))} onCompleted={() => void refreshMessages()} onProgress={(item) => setProgress(previous => [...previous, item])} onPlan={recordPlan} />
-          else if (message.type === 'RECOMMENDATION_CARD' && message.cardType === 'MUSIC_RECOMMENDATIONS') content = <MusicRecommendationsCard payload={message.cardPayloadJson} conversationId={current?.id} />
+          else if (message.type === 'RECOMMENDATION_CARD' && message.cardType === 'MUSIC_RECOMMENDATIONS') content = <MusicRecommendationsCard payload={message.cardPayloadJson} conversationId={current?.id} sourceMessageId={message.id} />
           else if (message.type === 'RECOMMENDATION_CARD' && message.cardType === 'PUBLIC_MUSIC_SOURCES') content = <PublicMusicSourcesCard payload={message.cardPayloadJson} />
           else if (message.type === 'RECOMMENDATION_CARD' && message.cardType === 'MUSIC_ANALYSIS') content = <MusicAnalysisCard payload={message.cardPayloadJson} />
           else if (message.type === 'RECOMMENDATION_CARD') content = <RecommendationNoticeCard payload={message.cardPayloadJson} />
@@ -340,7 +376,7 @@ export function ConversationApp({ initialConversationId, initialContent, onHome 
           else if (message.type === 'REPORT_CARD' && message.cardType === 'EXPLORATION_REPORT') content = <ExplorationReportCard payload={message.cardPayloadJson} conversationId={current?.id} />
           else if (message.type === 'REPORT_CARD') content = <ReportCard payload={message.cardPayloadJson} />
           else content = <article className={`conversation-message ${message.role === 'USER' ? 'user' : 'agent'}`}>{message.role !== 'USER' && <span className="message-agent-mark"><BrandMark /></span>}<MessageBody content={message.content || ''} /></article>
-          return <TimedMessage key={message.id} createdAt={message.createdAt} animate={newCardIds.has(message.id)}>{content}</TimedMessage>
+          return <TimedMessage key={message.id} id={message.id} createdAt={message.createdAt} animate={newCardIds.has(message.id)}>{content}</TimedMessage>
         })}
         {candidateRun && <CandidateGenerationCard size={candidateRun.size} preferenceText={candidateRun.preferenceText} onProgress={(item) => setProgress(previous => [...previous, item])} onPlan={recordPlan} onRunId={setCurrentRunId} onCompleted={async payload => { await persistCard('CANDIDATE_POOL_CARD', 'CANDIDATE_POOL', payload); setCandidateRun(null); setCollapsed(true) }} onFailed={message => { setNotice(message); setCandidateRun(null); setCollapsed(true) }} />}
         {streamingResponse && <article className="conversation-message agent streaming-response"><span className="message-agent-mark"><BrandMark /></span><MessageBody content={streamingResponse} /><i className="streaming-response-caret" aria-hidden="true" /></article>}
@@ -349,6 +385,7 @@ export function ConversationApp({ initialConversationId, initialContent, onHome 
       </section>
       <form className="conversation-composer" onSubmit={event => void send(event)}><div className="composer-frame"><textarea value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder={queuedFollowUp ? '已有一条消息等待发送' : interventionUsed ? '已调整本轮方向，请等待这一轮完成' : pending && currentRunId ? '输入下一条消息……' : '和寻声聊聊音乐……'} maxLength={2000} disabled={composerLocked} />{queuedFollowUp && <div className="composer-follow-up"><span><small>下一条消息</small><strong>{queuedFollowUp.content}</strong></span><button type="button" onClick={() => void interveneQueuedMessage()}>立即介入本轮</button></div>}<div className="composer-toolbar"><div className="composer-memory"><button className="memory-compress-button" type="button" aria-label="整理较早的对话" title={memory?.manualCompressionAvailable ? '整理较早的对话' : '目前无需整理'} disabled={!memory?.manualCompressionAvailable || runActive || compressingMemory} onClick={() => void compressConversationMemory()}>{compressingMemory ? <span className="memory-spinner" /> : <MemoryIcon />}</button>{memory && <div className="memory-meter" title="当前对话的记忆占用；较长时会自动整理较早内容" role="progressbar" aria-label="对话记忆占用" aria-valuemin={0} aria-valuemax={100} aria-valuenow={memory.percent}><span><i style={{ width: `${memory.percent}%` }} /></span></div>}</div><button className={`composer-send ${composerAction === 'stop' ? 'stop' : ''}`} type={composerAction === 'stop' ? 'button' : 'submit'} onClick={composerAction === 'stop' ? () => void stopCurrentRun() : undefined} aria-label={composerAction === 'stop' ? '停止生成' : '发送消息'} title={composerAction === 'stop' ? '停止生成' : '发送'} disabled={composerAction === 'disabled' || (composerAction === 'send' && composerLocked)}>{composerAction === 'stop' ? <StopIcon /> : pending && !currentRunId ? <span className="composer-spinner" /> : <SendIcon />}</button></div></div><small>{queuedFollowUp ? '本轮结束后会自动发送；需要改变当前结果时再选择立即介入。' : interventionUsed ? '本轮已经调整过一次，完成后可以继续对话。' : pending && currentRunId ? '直接发送会排到下一轮。' : memory?.autoCompressionReady ? '稍后会自动整理较早的对话。' : '请核对重要的音乐资料与链接。'}</small></form>
     </section>
+    {libraryOpen && <MusicLibrary conversationId={current?.id} onMenu={()=>setMobileSidebarOpen(true)} guest={!authSession?.authenticated} onBack={()=>showLibrary(false)} onSource={song=>void sourceSong(song)} onTalk={content=>{setDraft(previous=>previous.trim() ? previous+'\n\n'+content : content);showLibrary(false);requestAnimationFrame(()=>document.querySelector<HTMLTextAreaElement>('.conversation-composer textarea')?.focus())}} />}
     <aside className="conversation-agent-panel"><AgentPlanPanel plans={planHistory.length ? planHistory : (plan ? [plan] : [])} active={runActive} latest={progress[progress.length - 1]} /></aside>
       <button ref={accountTrigger} className="account-launcher" type="button" aria-label={authSession?.authenticated ? "打开账户菜单" : "登录账户"} aria-haspopup={authSession?.authenticated ? undefined : "dialog"} aria-expanded={authOpen} onClick={() => setAuthOpen(value => !value)}><span className="conversation-account-avatar">{authSession?.avatarUrl ? <img src={authSession.avatarUrl} alt="" /> : (authSession?.displayName || '访').slice(0, 1)}</span><span>{authSession?.authenticated ? authSession.displayName : '登录'}</span></button>
     {authOpen && <AccountDialog returnFocusRef={accountTrigger} session={authSession} onClose={() => setAuthOpen(false)} onSessionChange={(value, reason) => { setAuthSession(value); if (reason !== 'profile') { setAuthOpen(false); window.location.reload() } }} />}
@@ -391,7 +428,7 @@ export function composerPrimaryAction(runActive: boolean, hasText: boolean, canS
 
 function formatElapsed(value: number) { const seconds = Math.max(0, Math.floor(value / 1000)); return seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}` }
 function formatMessageTime(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) }
-function TimedMessage({ createdAt, children, animate = false }: { createdAt: string; children: ReactNode; animate?: boolean }) { const label = formatMessageTime(createdAt); return <div className={`conversation-message-shell${animate ? ' is-new-card' : ''}`}>{label && <time dateTime={createdAt}>{label}</time>}{children}</div> }
+function TimedMessage({ id, createdAt, children, animate = false }: { id: string; createdAt: string; children: ReactNode; animate?: boolean }) { const label = formatMessageTime(createdAt); return <div id={`message-${id}`} className={`conversation-message-shell${animate ? ' is-new-card' : ''}`}>{label && <time dateTime={createdAt}>{label}</time>}{children}</div> }
 
 export function MessageBody({ content }: { content: string }) {
   const blocks: { heading: boolean; text: string }[] = []
@@ -478,13 +515,16 @@ function MusicAnalysisCard({ payload }: { payload?: string | null }) {
     {value.sources?.length ? <details className="music-analysis-details"><summary>查看全部公开来源</summary><ol>{value.sources.map((item, index) => <li key={`${item.url}-${index}`}><a href={item.url} target="_blank" rel="noreferrer"><strong>{item.ref} · {item.title || '公开音乐资料'}</strong>{item.quality?.kind && <small>{sourceKinds[item.quality.kind] || '公开资料'}{item.quality.hasFullTextExcerpt ? ' · 已精读正文' : ''}</small>}{item.summary && <small>{item.summary}</small>}</a></li>)}</ol></details> : null}
   </section>
 }
-function MusicRecommendationsCard({ payload, conversationId }: { payload?: string | null; conversationId?: string }) {
+function MusicRecommendationsCard({ payload, conversationId, sourceMessageId }: { payload?: string | null; conversationId?: string; sourceMessageId: string }) {
   type Song = { recordingId?: string; title?: string; artistName?: string; albumTitle?: string; coverUrl?: string; reason?: string; sourceUrl?: string; searchUrl?: string; verificationStatus?: string }
   type Artist = { artistId?: string; artistName?: string; reason?: string; sourceUrl?: string; searchUrl?: string; verificationStatus?: string }
   let value: { title?: string; summary?: string; songs?: Song[]; artists?: Artist[]; sources?: { title?: string; url?: string }[]; contextMode?: string; basedOnCardId?: string; appliedInstruction?: string } = {}
   try { value = JSON.parse(payload || '{}') } catch { /* degraded card */ }
   const [feedback, setFeedback] = useState<Record<string, string>>({})
-  const listening = useListeningPreview()
+  const library = useMusicLibrary()
+  const listening = library.listening
+  const songIds = (()=>{try{return (JSON.parse(payload||'{}').songs||[]).map((item:{recordingId?:string})=>item.recordingId).filter(Boolean).join(',')}catch{return ''}})()
+  useEffect(()=>{void library.ensure(songIds ? songIds.split(',') : [])},[songIds,library.ensure])
   const seenSongs = new Set<string>()
   const displaySongs = (value.songs || []).filter(item => { const key = `${item.recordingId || ''}|${item.artistName || ''}|${item.title || ''}`.toLocaleLowerCase().replace(/[^\p{L}\p{N}|]/gu, ''); if (seenSongs.has(key)) return false; seenSongs.add(key); return true })
   const seenArtists = new Set<string>()
@@ -511,9 +551,10 @@ function MusicRecommendationsCard({ payload, conversationId }: { payload?: strin
       const feedbackKey = `song-${item.recordingId || index}`
       const playback = item.recordingId ? listening.stateFor(item.recordingId) : null
       const content = <><MusicCover url={item.coverUrl} title={item.title} /><span><strong>{item.title}</strong><small>{item.artistName}{item.albumTitle ? ` · ${item.albumTitle}` : ''}</small><em>{item.reason}</em>{playback && <span className={`recommendation-playback ${playback.phase}`}>{playbackLabel(playback.phase)}</span>}</span></>
-      return <li key={`${feedbackKey}-${index}`} className={item.recordingId && listening.active?.id === item.recordingId ? 'is-active' : undefined}>{item.recordingId ? <button className="music-recommendation-main" type="button" onMouseEnter={() => void listening.prefetch(item.recordingId!)} onFocus={() => void listening.prefetch(item.recordingId!)} onClick={() => void listening.toggle(item.recordingId!)}>{content}</button> : <div className="music-recommendation-main">{content}</div>}<div className="music-recommendation-actions"><small>{item.verificationStatus === 'MUSICBRAINZ_VERIFIED' ? 'MusicBrainz 已核验' : '公开资料发现'}</small>{item.searchUrl && <a href={item.searchUrl} target="_blank" rel="noreferrer">去平台</a>}<button onClick={() => void sendFeedback('SONG', feedbackKey, { recordingId: item.recordingId, title: item.title, artistName: item.artistName }, 'LIKE')}>喜欢</button><button onClick={() => void sendFeedback('SONG', feedbackKey, { recordingId: item.recordingId, title: item.title, artistName: item.artistName }, 'DISLIKE')}>不适合</button>{feedback[feedbackKey] && <small>已记录</small>}</div></li>
+      return <li key={`${feedbackKey}-${index}`} className={item.recordingId && listening.active?.id === item.recordingId ? 'is-active' : undefined}>{item.recordingId ? <button className="music-recommendation-main" type="button" onMouseEnter={() => void listening.prefetch(item.recordingId!)} onFocus={() => void listening.prefetch(item.recordingId!)} onClick={() => library.play({recordingId:item.recordingId!,title:item.title||'音乐试听',artistName:item.artistName||'',coverUrl:item.coverUrl})}>{content}</button> : <div className="music-recommendation-main">{content}</div>}<div className="music-recommendation-actions">{item.recordingId && <SaveSongButton id={item.recordingId} title={item.title||'歌曲'} sourceMessageId={sourceMessageId} />}<small>{item.verificationStatus === 'MUSICBRAINZ_VERIFIED' ? 'MusicBrainz 已核验' : '公开资料发现'}</small>{item.searchUrl && <a href={item.searchUrl} target="_blank" rel="noreferrer">去平台</a>}<button onClick={() => void sendFeedback('SONG', feedbackKey, { recordingId: item.recordingId, title: item.title, artistName: item.artistName }, 'LIKE')}>喜欢</button><button onClick={() => void sendFeedback('SONG', feedbackKey, { recordingId: item.recordingId, title: item.title, artistName: item.artistName }, 'DISLIKE')}>不适合</button>{feedback[feedbackKey] && <small>已记录</small>}</div></li>
     })}</ol></> : null}
     {displayArtists.length ? <><h3>艺人</h3><ol className="music-artist-list">{displayArtists.map((item, index) => { const key=`artist-${item.artistId || item.artistName || index}`; return <li key={key}><a href={item.searchUrl || item.sourceUrl} target="_blank" rel="noreferrer"><strong>{item.artistName}</strong><small>{item.reason}</small></a><div className="music-recommendation-actions"><small>{item.verificationStatus === 'MUSICBRAINZ_VERIFIED' ? 'MusicBrainz 已核验' : '公开资料发现'}</small><button onClick={() => void sendFeedback('ARTIST', key, { artistId: item.artistId, artistName: item.artistName }, 'LIKE')}>喜欢</button><button onClick={() => void sendFeedback('ARTIST', key, { artistId: item.artistId, artistName: item.artistName }, 'DISLIKE')}>不适合</button>{feedback[key] && <small>已记录</small>}</div></li> })}</ol></> : null}
+    {library.error && <p className="library-error" role="alert">{library.error}<button type="button" onClick={()=>void library.ensure(songIds.split(',').filter(Boolean),true)}>重新读取保存状态</button></p>}
     {value.sources?.length ? <details className="music-recommendation-sources"><summary>查看推荐依据</summary>{value.sources.map((item, index) => <a key={`${item.url}-${index}`} href={item.url} target="_blank" rel="noreferrer">{item.title || '公开资料'}</a>)}</details> : null}
   </section>
 }
