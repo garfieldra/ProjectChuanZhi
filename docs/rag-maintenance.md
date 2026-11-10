@@ -18,6 +18,10 @@ IDEA 原生 Java 场景可使用本机单独维护的 Compose 覆盖配置，为
 
 登录维护者账号后进入 `/#knowledge`，也可使用“维护音乐资料”入口。录入规范实体 ID、知识表述、适用范围、来源和必要短摘录。保存只产生草稿，审核通过后还需显式发布。修改发布内容创建新版本；旧已发布版本在新版本发布前仍可用。
 
+发布前由 Agent 使用各索引代次的固定模型分词器检查完整文档模板，输入须不超过 480 token。表述、实体、别名和边界都会占用输入预算；超长时请拆分为原子资料或缩短非必要字段，再重新审核发布。检查不可用时保留原发布状态，不创建新索引任务，稍后可重试发布。
+
+“多实体、多来源及别名编辑”中的 JSON 在开始编辑前同步表单最新内容。JSON 编辑后若又修改表单，应用时会提示冲突；点击“载入最新表单内容”后重新编辑，避免旧 JSON 覆盖新内容。
+
 JSON/JSONL 批量导入使用与 `KnowledgeContracts.Submission` 相同的字段：`knowledgeType`、`summary`、`boundary`、`attribution`、`applicability`、`aliases`、`entities`、`support`。每个 support 包含 source、excerpt、locator 和 relation。source 必须提供稳定 identifier、title、rightsNote 和 materialType。对采访观点填写 attribution；对主题卡保留解释边界，不导入歌词原文。
 
 Markdown/TXT 可载入人工整理区；超过单条限制时必须由维护者整理为原子知识，不会自动截断后发布。指定网页读取只返回候选正文，维护者应选择必要短摘录并确认使用方式。读取文件或网页不会自动调用模型；需要时再点击“辅助提取候选（使用模型）”，生成结果仍须人工确认。

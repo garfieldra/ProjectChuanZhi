@@ -23,7 +23,7 @@ class KnowledgeControllerTest {
     });
     server.start();
     try {
-      var access=mock(KnowledgeAccess.class);var service=new KnowledgeService(mock(JdbcTemplate.class),new ObjectMapper(),mock(jakarta.validation.Validator.class),mock(AsyncOutboxEventRepository.class));
+      var access=mock(KnowledgeAccess.class);var service=new KnowledgeService(mock(JdbcTemplate.class),new ObjectMapper(),mock(jakarta.validation.Validator.class),mock(AsyncOutboxEventRepository.class),mock(KnowledgeIndexPreflight.class));
       var controller=new KnowledgeController(access,service,"http://127.0.0.1:"+server.getAddress().getPort(),"test-token");
       Object result=controller.search(()->"operator",null,new KnowledgeContracts.Search("音乐背景",List.of(),"STRICT",List.of("FACT"),6));
       assertEquals("no_match",((Map<?,?>)result).get("status"));assertNull(upgrade.get());

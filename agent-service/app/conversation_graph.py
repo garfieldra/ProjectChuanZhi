@@ -5,7 +5,7 @@ import json
 import re
 from typing import Literal, TypedDict
 from urllib.parse import quote
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
@@ -36,6 +36,48 @@ from .music_analysis import (
 )
 
 
+def _merge_verified_entities(existing: list[dict], incoming: list[dict]) -> list[dict]:
+    values = {}
+    for item in [*existing, *incoming]:
+        if item.get("type") not in {"ARTIST", "WORK", "RECORDING", "RELEASE", "RELEASE_GROUP"}:
+            continue
+        try:
+            key = (item["type"], str(UUID(str(item["id"]))))
+        except (ValueError, KeyError, TypeError):
+            continue
+        values[key] = {"type": key[0], "id": key[1], "role": "SUBJECT"}
+    return list(values.values())[-20:]
+
+
+def _verified_research_entities(sources: list[dict]) -> list[dict]:
+    types = {"artist": "ARTIST", "work": "WORK", "recording": "RECORDING", "release": "RELEASE", "release-group": "RELEASE_GROUP"}
+    return _merge_verified_entities([], [
+        {"type": types.get(source.get("entityType")), "id": source.get("musicbrainzMbid")}
+        for source in sources if source.get("searchProvider") == "musicbrainz" and source.get("ambiguous") is False
+    ])
+
+
+def _knowledge_scope(state: dict, decision) -> tuple[list[dict] | None, str]:
+    artists = [{"type": "ARTIST", "id": str(e["mbid"]), "role": "SUBJECT"}
+               for e in state.get("entity_resolutions", []) if e.get("mbid") and e.get("status") == "RESOLVED"]
+    verified = _merge_verified_entities(artists, state.get("verified_music_entities", []))
+    wanted_type = decision.entity_type.upper().replace("-", "_")
+    if decision.entity_mbid:
+        selected = [e for e in verified if e["type"] == wanted_type and e["id"] == decision.entity_mbid.lower()]
+        if not selected:
+            return None, "STRICT"
+    else:
+        concrete = [e for e in verified if e["type"] != "ARTIST"]
+        selected = ([e for e in verified if e["type"] == "ARTIST"] if wanted_type == "ARTIST"
+                    else ([e for e in concrete if e["type"] == wanted_type] or concrete))
+        if not selected:
+            if state.get("analysis_workspace"):
+                return None, "STRICT"
+            selected = artists
+    scope = "STRICT" if any(e["type"] in {"RECORDING", "RELEASE"} for e in selected) else decision.knowledge_entity_scope
+    return selected, scope
+
+
 class ConversationDecision(BaseModel):
     action: Literal["search_web", "read_source", "research_musicbrainz", "search_wikimedia", "search_lastfm", "search_knowledge", "recommend_music", "analyze_music", "clarify", "propose_tournament", "build_candidate_pool", "generate_exploration_report", "respond"]
     public_summary: str = Field(min_length=4, max_length=100)
@@ -43,6 +85,7 @@ class ConversationDecision(BaseModel):
     source_ref: str | None = Field(default=None, max_length=20)
     entity_type: Literal["artist", "recording", "release-group", "work"] = "recording"
     entity_mbid: str | None = Field(default=None, max_length=60)
+    knowledge_entity_scope: Literal["STRICT", "RELATED_CONTEXT"] = "RELATED_CONTEXT"
     lastfm_mode: Literal["similar_artists", "top_tracks", "artist_tags", "similar_tracks", "track_tags"] = "similar_artists"
     artist_name: str | None = Field(default=None, max_length=180)
     track_title: str | None = Field(default=None, max_length=180)
@@ -74,6 +117,7 @@ class ConversationState(TypedDict, total=False):
     web_sources: list[dict]
     knowledge: list[dict]
     evidence_registry: dict[str, str]
+    verified_music_entities: list[dict]
     iteration: int
     preference_profile: dict
     entity_resolutions: list[dict]
@@ -319,6 +363,7 @@ class ConversationReActRuntime:
             "iteration": state.get("iteration", 0),
             "researchAssessment": state.get("research_assessment", {}),
             "entityResolutions": state.get("entity_resolutions", []),
+            "verifiedMusicEntities": state.get("verified_music_entities", []),
             "preferenceProfile": state.get("preference_profile", {}),
             "analysisWorkspace": state.get("analysis_workspace", {}),
             "analysisEvidenceCoverage": state.get("evidence_coverage", {}),
@@ -342,7 +387,7 @@ class ConversationReActRuntime:
 - research_musicbrainz：需要核对作品/录音版本、ISRC、发行、创作署名、合作人员或规范实体关系时使用。entity_type 选择 artist、recording、release-group 或 work；已知 MBID 时填写 entity_mbid，否则必须尽量把 artist_name 与 track_title 分开填写，query 只作为补充；它提供目录事实，不替代乐评与采访；
 - search_wikimedia：需要艺人身份、别名、乐队成员、地区、年代、作品时间线或音乐史背景时使用。它是百科语境来源，不能单独证明主观音乐评价；
 - search_lastfm：需要相似艺人、相似歌曲、热门曲目或听众标签时使用。填写 artist_name，歌曲模式同时填写 track_title；Last.fm 只是听众关系与发现信号，具体歌曲仍需 MusicBrainz 核验。toolAvailability.lastfm=false 时禁止选择；
-- search_knowledge：本地已审核事实可支持背景分析，主题卡仅作解释；它不是歌曲发现主来源；
+- search_knowledge：本地已审核事实可支持背景分析，主题卡仅作解释；它不是歌曲发现主来源。研究具体作品时先以 research_musicbrainz 确认对象，从 verifiedMusicEntities 选择 entity_type/entity_mbid；指定录音或发行版本使用 knowledge_entity_scope=STRICT。不得把艺人 ID 当成作品 ID；
 - recommend_music：已有足够公开资料时，提取具体歌曲/艺人推荐，并通过 MusicBrainz 核验可核验的歌曲；这是普通探索 Tool，与世界杯无关；
 - analyze_music：当前问题需要解释、拆解、比较或论证，且已有资料足以在明确边界内形成深入回答。深度音乐分析是按需加载的 Skill，不是固定工作流；你应根据 analysisWorkspace 和 analysisEvidenceCoverage 自主决定搜索、精读、补充本地资料或停止。创作背景、采访、制作署名等事实型问题若仍有 blockingGaps，应优先补足最可能改变结论的缺口；
 - 研究效率：当已有来源能够回答核心问题时尽早选择 analyze_music；新增搜索必须针对会改变结论的具体缺口，不为凑来源数量而检索。描述性听感问题可以说明证据边界后作答；只有创作/制作等事实密集问题才需要额外精读和独立来源核对。连续无新增证据时停止研究，不重复同类查询；
@@ -727,6 +772,7 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
             "evidenceCoverage": evidence_coverage,
             "claimReview": review_meta,
             "sourceConflicts": source_conflicts,
+            "verifiedMusicEntities": state.get("verified_music_entities", []),
         }
         previous_analysis = latest_analysis_context(request)
         if previous_analysis:
@@ -855,6 +901,7 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
             return {
                 "action_history": history,
                 "observations": [], "web_sources": initial_sources, "knowledge": [], "evidence_registry": {}, "iteration": 0,
+                "verified_music_entities": _merge_verified_entities([], latest_analysis_context(request).get("payload", {}).get("verifiedMusicEntities", [])) if analysis_workspace is not None else [],
                 "preference_profile": profile.model_dump(by_alias=True),
                 "entity_resolutions": resolutions, "entity_ambiguities": ambiguities,
                 "research_assessment": {}, "search_attempts": 0, "analysis_queries": [],
@@ -1043,6 +1090,7 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
                         "outputCount": len(found), "newOutputCount": new_count, "entityType": decision.entity_type,
                         "ambiguousCount": sum(bool(item.get("ambiguous")) for item in found),
                     }],
+                    "verified_music_entities": _merge_verified_entities(state.get("verified_music_entities", []), _verified_research_entities(found)),
                 }
                 if state.get("analysis_workspace"):
                     workspace = workspace_after_research(
@@ -1099,9 +1147,11 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
                 }
             if action == "search_knowledge":
                 query = state["decision"].query or request.user_message
-                entities = [{"type": "ARTIST", "id": str(item.get("mbid"))} for item in state.get("entity_resolutions", []) if item.get("mbid") and item.get("status") == "RESOLVED"]
+                entities, scope = _knowledge_scope(state, state["decision"])
+                if entities is None:
+                    return {"observations": state["observations"] + [{"action": action, "status": "unavailable", "reason": "MUSIC_ENTITY_VERIFICATION_REQUIRED", "outputCount": 0}]}
                 if hasattr(self.knowledge, "search"):
-                    retrieved = await self.knowledge.search({"query": query, "entities": entities, "entityScope": "RELATED_CONTEXT"})
+                    retrieved = await self.knowledge.search({"query": query, "entities": entities, "entityScope": scope})
                     cards = retrieved.get("evidence", [])
                     knowledge_status = retrieved.get("status", "unavailable")
                 else:

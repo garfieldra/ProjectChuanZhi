@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from './apiClient'
 import './knowledge.css'
+import { applyKnowledgeJson, knowledgeRevisionStatus } from './knowledgeEditing'
 
 const kindLabels: Record<string, string> = { FACT: '可核验事实', ATTRIBUTED_STATEMENT: '采访与归因评价', EDITORIAL_CONTEXT: '历史与文化语境', THEME_CARD: '主题与听感解释', ARTIST: '艺人', WORK: '作品', RECORDING: '录音版本', RELEASE: '具体发行', RELEASE_GROUP: '专辑作品' }
 const statusLabels: Record<string, string> = { DRAFT: '待审核', APPROVED: '审核通过', REJECTED: '已退回', UNPUBLISHED: '尚未发布', PUBLISHED: '已发布', RETRACTED: '已撤回', PENDING: '等待索引', RUNNING: '处理中', SUCCEEDED: '已完成', RETRY_WAIT: '等待重试', DEAD: '需要处理', BUILDING: '重建中', ACTIVE: '使用中', STANDBY: '可回退' }
@@ -16,7 +17,7 @@ async function request(path: string, body?: unknown, method = 'POST') {
   const signature = method + path + JSON.stringify(body)
   if (body !== undefined && !pendingMutationKeys.has(signature)) pendingMutationKeys.set(signature, crypto.randomUUID())
   const response = await apiFetch('/api/v1/admin/knowledge' + path, body === undefined ? {} : { method, headers: { 'Content-Type': 'application/json', 'Idempotency-Key': pendingMutationKeys.get(signature) || crypto.randomUUID() }, body: JSON.stringify(body) })
-  if (!response.ok) { const error = await response.json().catch(() => ({})); throw new Error(error.message || error.detail || `操作失败（${response.status}）`) }
+  if (!response.ok) { const error = await response.json().catch(() => ({})); const message = error.message || error.detail || `操作失败（${response.status}）`; throw new Error(message === 'APPROVAL_REQUIRED' ? '请先审核通过当前版本，再发布。' : message) }
   pendingMutationKeys.delete(signature)
   const text = await response.text(); return text ? JSON.parse(text) : null
 }
@@ -24,7 +25,8 @@ async function request(path: string, body?: unknown, method = 'POST') {
 export function KnowledgeAdmin({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState('entries'), [rows, setRows] = useState<Row[]>([]), [selected, setSelected] = useState<Row | null>(null)
   const [content, setContent] = useState<Content>(blank), [message, setMessage] = useState(''), [busy, setBusy] = useState(false)
-  const [advancedText, setAdvancedText] = useState('')
+  const [advancedText, setAdvancedText] = useState<string | null>(null)
+  const [advancedBase, setAdvancedBase] = useState<string | null>(null)
   const [candidates, setCandidates] = useState<Row[]>([])
   const [materialText, setMaterialText] = useState('')
   const [searchGeneration, setSearchGeneration] = useState('')
@@ -32,7 +34,8 @@ export function KnowledgeAdmin({ onClose }: { onClose: () => void }) {
   const refresh = async () => setRows(await request('/' + tab) as Row[])
   useEffect(() => { void refresh().catch(error => setMessage(error.message)) }, [tab])
   async function act(action: () => Promise<unknown>) { setBusy(true); setMessage(''); try { const result = await action(); setMessage(typeof result === 'string' ? result : '操作完成'); await refresh() } catch (error) { setMessage(error instanceof Error ? error.message : '操作失败') } finally { setBusy(false) } }
-  async function open(id: string) { const item = await request('/entries/' + id); setSelected(item); setAdvancedText(''); setContent((item.versions as Row[])[0].content as Content); setNote('') }
+  function resetAdvanced() { setAdvancedText(null); setAdvancedBase(null) }
+  async function open(id: string) { const item = await request('/entries/' + id); setSelected(item); resetAdvanced(); setContent((item.versions as Row[])[0].content as Content); setNote('') }
   const revision = Number(selected?.current_revision || 1)
   const updateSource = (field: string, value: string) => setContent(c => ({ ...c, support: c.support.map((s, i) => i ? s : { ...s, source: { ...s.source, [field]: value } }) }))
   return <main className="knowledge-admin">
@@ -41,11 +44,11 @@ export function KnowledgeAdmin({ onClose }: { onClose: () => void }) {
     <p role="status">{message}</p>
     <div className="knowledge-layout"><section>
       <h2>{tab === 'entries' ? '知识条目' : '维护记录'}</h2><button disabled={busy} onClick={() => void act(refresh)}>刷新</button>
-      {tab === 'entries' && <button onClick={() => { setSelected(null); setContent(blank()) }}>新建资料</button>}
+      {tab === 'entries' && <button onClick={() => { setSelected(null); resetAdvanced(); setContent(blank()) }}>新建资料</button>}
       {rows.length === 0 && <p>暂无记录。</p>}
       <ul className="knowledge-records">{rows.map((row, i) => <li key={String(row.id || i)}>
         <strong>{String(row.summary || (row.content as Row | undefined)?.title || row.action || row.operation || row.id)}</strong>
-        <small>{statusLabels[String(row.status || row.review_status || '')] || String(row.status || row.review_status || '')} {row.current_revision ? ` · 第 ${row.current_revision} 版` : ''}</small>
+        <small>{knowledgeRevisionStatus(row) || <>{statusLabels[String(row.status || row.review_status || '')] || String(row.status || row.review_status || '')} {row.current_revision ? ` · 第 ${row.current_revision} 版` : ''}</>}</small>
         {tab === 'entries' && <button onClick={() => void act(() => open(String(row.id)))}>查看与编辑</button>}
         {tab === 'sources' && <button onClick={() => { if (confirm('撤回来源后，相关资料将不能继续用于新回答。确认撤回？')) void act(() => request(`/sources/${row.id}/retract`, { reason: '维护者撤回来源' })) }}>撤回来源</button>}
         {tab === 'jobs' && <><small>{String(row.error_code || '')}</small><button disabled={busy || row.status === 'RUNNING'} onClick={() => void act(() => request(`/jobs/${row.id}/retry`, {}))}>重试</button></>}
@@ -72,7 +75,7 @@ export function KnowledgeAdmin({ onClose }: { onClose: () => void }) {
         <label>必要短摘录<textarea maxLength={2000} value={content.support[0]?.excerpt || ''} onChange={e => setContent(c => ({ ...c, support: c.support.map((s, i) => i ? s : { ...s, excerpt: e.target.value }) }))} /></label>
         <label>段落、章节或时间戳<input value={content.support[0]?.locator || ''} onChange={e => setContent(c => ({ ...c, support: c.support.map((s, i) => i ? s : { ...s, locator: e.target.value }) }))} /></label>
       </fieldset>
-      <details><summary>多实体、多来源及别名编辑</summary><textarea className="knowledge-json" key={`${selected?.id || "new"}-${revision}`} defaultValue={JSON.stringify(content, null, 2)} onChange={e => setAdvancedText(e.target.value)} /><button disabled={!advancedText} onClick={() => { try { const parsed = JSON.parse(advancedText); if (!parsed.entities?.length || !parsed.support?.length) throw new Error(); setContent(parsed); setAdvancedText(''); setMessage('编辑内容已应用，请保存为待审核版本。') } catch { setMessage('请提供完整的实体与支持材料。') } }}>应用编辑</button></details>
+      <details><summary>多实体、多来源及别名编辑</summary><textarea aria-label="资料 JSON" className="knowledge-json" value={advancedText ?? JSON.stringify(content, null, 2)} onChange={e => { if (advancedText === null) setAdvancedBase(JSON.stringify(content)); setAdvancedText(e.target.value) }} /><button disabled={advancedText === null} onClick={() => { try { setContent(applyKnowledgeJson(content, advancedBase, advancedText!)); resetAdvanced(); setMessage('编辑内容已应用，请保存为待审核版本。') } catch (error) { setMessage(error instanceof Error ? error.message : '请提供有效的 JSON。') } }}>应用编辑</button><button onClick={resetAdvanced}>载入最新表单内容</button></details>
       <button disabled={busy} onClick={() => void act(async () => { if (selected) { await request(`/entries/${selected.id}?expectedRevision=${revision}`, content, 'PUT'); await open(String(selected.id)) } else { const result = await request('/imports', { origin: 'MANUAL_EDIT', candidateItems: [content] }); const row = result.results[0]; if (!row.entryId) throw new Error(row.error); await open(row.entryId) } })}>保存为待审核版本</button>
       {selected && <><label>审核说明 / 撤回原因<textarea value={note} onChange={e => setNote(e.target.value)} /></label><div className="knowledge-actions">
         <button disabled={busy || !note.trim()} onClick={() => void act(async () => { await request(`/entries/${selected.id}/review`, { revision, status: 'APPROVED', note }); await open(String(selected.id)) })}>审核通过</button>

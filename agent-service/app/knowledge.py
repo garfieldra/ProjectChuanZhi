@@ -80,7 +80,7 @@ class VersionedIndex:
             self._clients[self.uri] = MilvusClient(uri=self.uri, timeout=3)
         return self._clients[self.uri]
 
-    def vector(self, text: str, config: dict) -> list[float]:
+    def model(self, config: dict):
         from fastembed import TextEmbedding
         key = (config["model"], config["modelRevision"], config["templateVersion"])
         with self._model_lock:
@@ -96,10 +96,22 @@ class VersionedIndex:
                     cache_dir=os.getenv("FASTEMBED_CACHE_PATH"),
                     allow_patterns=[description["model_file"], "config.json", "tokenizer.json", "tokenizer_config.json", "special_tokens_map.json"])
                 self._models[key] = TextEmbedding(model_name=config["model"], specific_model_path=path)
-        model = self._models[key]
+        return self._models[key]
+
+    def validate_text(self, text: str, config: dict):
+        model = self.model(config)
         tokenizer = getattr(getattr(model, "model", None), "tokenizer", None)
-        if tokenizer is not None and len(tokenizer.encode(text).ids) > 480:
+        if tokenizer is None:
+            raise ValueError("KNOWLEDGE_TOKENIZER_UNAVAILABLE")
+        if len(tokenizer.encode(text).ids) > 480:
             raise ValueError("KNOWLEDGE_INPUT_TOO_LONG")
+        return model
+
+    def validate_document(self, content: dict, config: dict):
+        self.validate_text(document_text(content), config)
+
+    def vector(self, text: str, config: dict) -> list[float]:
+        model = self.validate_text(text, config)
         vector = next(iter(model.embed([text]))).tolist()
         if len(vector) != int(config["dimension"]):
             raise ValueError("EMBEDDING_DIMENSION_MISMATCH")

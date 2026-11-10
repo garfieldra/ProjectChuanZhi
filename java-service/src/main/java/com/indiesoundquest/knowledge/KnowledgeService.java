@@ -20,8 +20,9 @@ public class KnowledgeService {
   private final ObjectMapper json;
   private final Validator validator;
   private final AsyncOutboxEventRepository outbox;
-  public KnowledgeService(JdbcTemplate db, ObjectMapper json, Validator validator, AsyncOutboxEventRepository outbox) {
-    this.db=db; this.json=json; this.validator=validator; this.outbox=outbox;
+  private final KnowledgeIndexPreflight preflight;
+  public KnowledgeService(JdbcTemplate db, ObjectMapper json, Validator validator, AsyncOutboxEventRepository outbox, KnowledgeIndexPreflight preflight) {
+    this.db=db; this.json=json; this.validator=validator; this.outbox=outbox; this.preflight=preflight;
   }
   String write(Object value) { try { return json.writeValueAsString(value); } catch(Exception e) { throw new IllegalArgumentException("INVALID_KNOWLEDGE_JSON"); } }
   Map<String,Object> read(Object value) { try { return json.readValue(String.valueOf(value),new TypeReference<LinkedHashMap<String,Object>>(){}); } catch(Exception e) { throw new IllegalStateException("KNOWLEDGE_DATA_INVALID"); } }
@@ -121,6 +122,8 @@ public class KnowledgeService {
     if(!sourceActive(entry,revision))throw new IllegalStateException("SOURCE_RETRACTED");
     Object previous=current.get("published_revision");
     if("PUBLISHED".equals(current.get("status")) && previous!=null && number(previous)==revision)return detail(entry);
+    var content=read(one("SELECT payload_json FROM knowledge_entry_revision WHERE entry_id=? AND revision=?",entry,revision).get("payload_json"));
+    for(var generation:generations())preflight.validate(content,read(generation.get("payload_json")));
     db.update("UPDATE knowledge_entry SET published_revision=?,status='PUBLISHED',retraction_reason=NULL WHERE id=?",revision,entry);
     for(var generation:generations()) {
       int g=number(generation.get("id")); enqueue(entry,revision,g,"UPSERT");
@@ -162,7 +165,7 @@ public class KnowledgeService {
 
   public List<Map<String,Object>> exact(Search request) {
     // Bound the candidate set using entity indexes before doing application-level alias matching.
-    String sql="SELECT e.id,e.published_revision,r.summary,r.payload_json FROM knowledge_entry e JOIN knowledge_entry_revision r ON r.entry_id=e.id AND r.revision=e.published_revision WHERE e.status='PUBLISHED' AND r.review_status='APPROVED'";
+    String sql="SELECT e.id,e.published_revision,r.summary,r.payload_json FROM knowledge_entry e JOIN knowledge_entry_revision r ON r.entry_id=e.id AND r.revision=e.published_revision WHERE e.status='PUBLISHED' AND r.review_status='APPROVED' AND NOT EXISTS(SELECT 1 FROM knowledge_evidence_link l JOIN knowledge_source s ON s.id=l.source_id WHERE l.entry_id=e.id AND l.revision=e.published_revision AND s.status<>'ACTIVE')";
     var args=new ArrayList<Object>();
     if(request.entities()!=null && !request.entities().isEmpty()) {
       sql+=" AND EXISTS(SELECT 1 FROM knowledge_entry_entity x WHERE x.entry_id=e.id AND x.revision=e.published_revision AND (";

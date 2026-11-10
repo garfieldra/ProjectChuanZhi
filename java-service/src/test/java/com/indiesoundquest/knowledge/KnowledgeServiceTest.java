@@ -20,6 +20,7 @@ class KnowledgeServiceTest {
   @Container static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4");
   static KnowledgeService service;
   static JdbcTemplate db;
+  static KnowledgeIndexPreflight preflight;
   @BeforeAll static void schema() throws Exception {
     var ds=new DriverManagerDataSource(mysql.getJdbcUrl(),mysql.getUsername(),mysql.getPassword());
     db=new JdbcTemplate(ds);
@@ -32,7 +33,8 @@ class KnowledgeServiceTest {
       db.update("INSERT INTO async_outbox_event(id,aggregate_type,aggregate_id,event_type,payload_json,status,next_attempt_at) VALUES(UUID_TO_BIN(?),'KNOWLEDGE_INDEX',UUID_TO_BIN(?),'KNOWLEDGE_INDEX_REQUESTED',?,'PENDING',CURRENT_TIMESTAMP(3))",event.getId().toString(),job,event.getPayloadJson());return event;
     });
     when(outbox.republishKnowledge(any(UUID.class),any(java.time.Instant.class))).thenAnswer(call->db.update("UPDATE async_outbox_event SET status='PENDING' WHERE aggregate_type='KNOWLEDGE_INDEX' AND aggregate_id=UUID_TO_BIN(?)",call.getArgument(0,UUID.class).toString()));
-    service=new KnowledgeService(db,mapper,Validation.buildDefaultValidatorFactory().getValidator(),outbox);
+    preflight=mock(KnowledgeIndexPreflight.class);
+    service=new KnowledgeService(db,mapper,Validation.buildDefaultValidatorFactory().getValidator(),outbox,preflight);
   }
   Submission item(String summary) {
     return new Submission("FACT",summary,"仅适用于原作",null,"WORK",List.of("作品别名"),List.of(new Entity("WORK","work-id","SUBJECT")),List.of(new Support(new Source("source-"+UUID.randomUUID(),"官方采访","https://example.org/interview","发行方","zh",null,"允许保存必要短摘录",null,"INTERVIEW"),"作者在采访中明确介绍了这首作品的创作背景。","创作背景段落","SUPPORTS")),null);
@@ -101,5 +103,31 @@ class KnowledgeServiceTest {
     String job=(String)db.queryForMap("SELECT id FROM knowledge_index_job WHERE entry_id=? AND operation='UPSERT'",entry).get("id");
     service.reconcile();service.reconcile();service.retry("operator",job);
     assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM async_outbox_event WHERE aggregate_type='KNOWLEDGE_INDEX' AND aggregate_id=UUID_TO_BIN(?)",Integer.class,job));
+  }
+  @Test void invalidSourcesCannotCrowdOutTheNextValidExactHit() {
+    String valid=ingest(item("检索回归目标"),UUID.randomUUID().toString());
+    service.review("operator",valid,new Decision(1,"APPROVED","核对完成"));service.publish("operator",valid,1);
+    db.update("UPDATE knowledge_entry SET created_at='2000-01-01' WHERE id=?",valid);
+    for(int i=0;i<21;i++) {
+      String invalid=ingest(item("检索回归目标"),UUID.randomUUID().toString());
+      service.review("operator",invalid,new Decision(1,"APPROVED","核对完成"));service.publish("operator",invalid,1);
+      String source=(String)db.queryForMap("SELECT source_id FROM knowledge_evidence_link WHERE entry_id=?",invalid).get("source_id");
+      service.retractSource("operator",source,"撤回过期资料");
+    }
+    var search=new Search("检索回归目标",List.of(new Entity("WORK","work-id","SUBJECT")),"STRICT",List.of("FACT"),20);
+    var hits=service.exact(search);
+    assertTrue(hits.stream().anyMatch(hit -> valid.equals(hit.get("entryId"))));
+    assertTrue(hits.stream().allMatch(hit -> !service.verify(new Verify(List.of(new Hit((String)hit.get("entryId"),((Number)hit.get("revision")).intValue())),search)).isEmpty()));
+  }
+  @Test void overlongInputIsRejectedBeforePublicationOrIndexEnqueue() {
+    String entry=ingest(item("待拆分材料".repeat(300)),UUID.randomUUID().toString());
+    service.review("operator",entry,new Decision(1,"APPROVED","资料已核对但需要拆分"));
+    doThrow(new IllegalArgumentException("资料超过模型输入长度，请拆分")).when(preflight).validate(argThat(content -> String.valueOf(content.get("summary")).startsWith("待拆分材料")),anyMap());
+    try {
+      assertThrows(IllegalArgumentException.class,()->service.publish("operator",entry,1));
+      assertEquals("UNPUBLISHED",service.detail(entry).get("status"));
+      assertNull(service.detail(entry).get("published_revision"));
+      assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM knowledge_index_job WHERE entry_id=?",Integer.class,entry));
+    } finally {reset(preflight);}
   }
 }

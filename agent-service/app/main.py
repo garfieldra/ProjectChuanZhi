@@ -308,6 +308,20 @@ async def knowledge_search(request: dict):
     return await conversation_runtime.knowledge.search(request)
 
 
+@app.post("/internal/knowledge/validate-input", dependencies=[Depends(verify_caller)])
+async def knowledge_validate_input(request: dict):
+    import asyncio
+    try:
+        await asyncio.to_thread(conversation_runtime.knowledge.retriever.index.validate_document, request["content"], request["config"])
+    except ValueError as exc:
+        if str(exc) == "KNOWLEDGE_INPUT_TOO_LONG":
+            raise HTTPException(422, "KNOWLEDGE_INPUT_TOO_LONG") from exc
+        raise HTTPException(503, "KNOWLEDGE_INPUT_VALIDATION_UNAVAILABLE") from exc
+    except Exception as exc:
+        raise HTTPException(503, "KNOWLEDGE_INPUT_VALIDATION_UNAVAILABLE") from exc
+    return {"valid": True}
+
+
 @app.post("/internal/knowledge/extract", dependencies=[Depends(verify_caller)])
 async def knowledge_extract(request: dict):
     from .knowledge_extraction import extract_candidates

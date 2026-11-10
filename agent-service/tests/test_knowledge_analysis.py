@@ -6,6 +6,7 @@ from app.conversation_graph import ConversationReActRuntime
 from app.knowledge import stable_sources
 from app.music_analysis import EvidenceClaim, EvidenceClaimReview, MusicAnalysisDraft, MusicAnalysisReview, MusicAnalysisWorkspace, apply_claim_reviews
 from app.schemas import ConversationAgentRequest
+from app.conversation_graph import ConversationDecision, _knowledge_scope, _verified_research_entities
 
 
 def runtime_and_state(active=True):
@@ -59,3 +60,36 @@ def test_inherited_ref_numbers_are_reserved_before_new_sources():
     following = stable_sources([{'sourceUrl': 'https://new'}], registry)
     assert restored[0]['ref'] == 'S17'
     assert following[0]['ref'] == 'S18'
+
+
+def test_researched_work_scope_does_not_fall_back_to_artist():
+    work = str(uuid4())
+    verified = _verified_research_entities([{'searchProvider': 'musicbrainz', 'entityType': 'work', 'musicbrainzMbid': work, 'ambiguous': False}])
+    state = {'verified_music_entities': verified, 'entity_resolutions': [{'status': 'RESOLVED', 'mbid': str(uuid4())}], 'analysis_workspace': {'subject': '某作品'}}
+    entities, scope = _knowledge_scope(state, ConversationDecision(action='search_knowledge', public_summary='查询作品的审核资料'))
+    assert entities == [{'type': 'WORK', 'id': work, 'role': 'SUBJECT'}]
+    assert scope == 'RELATED_CONTEXT'
+
+
+def test_specific_recording_scope_is_strict_and_unverified_ids_are_rejected():
+    recording, other = str(uuid4()), str(uuid4())
+    state = {'verified_music_entities': [{'type': 'RECORDING', 'id': recording}, {'type': 'WORK', 'id': str(uuid4())}]}
+    decision = ConversationDecision(action='search_knowledge', public_summary='只检索指定录音版本', entity_type='recording', entity_mbid=recording)
+    entities, scope = _knowledge_scope(state, decision)
+    assert entities == [{'type': 'RECORDING', 'id': recording, 'role': 'SUBJECT'}]
+    assert scope == 'STRICT'
+    assert _knowledge_scope(state, decision.model_copy(update={'entity_mbid': other}))[0] is None
+    assert _verified_research_entities([{'searchProvider': 'musicbrainz', 'entityType': 'recording', 'musicbrainzMbid': other, 'ambiguous': True}]) == []
+
+
+def test_unresolved_song_analysis_does_not_query_all_artist_material():
+    state = {'analysis_workspace': {'subject': '指定现场录音'}, 'entity_resolutions': [{'status': 'RESOLVED', 'mbid': str(uuid4())}]}
+    assert _knowledge_scope(state, ConversationDecision(action='search_knowledge', public_summary='查询指定版本的资料'))[0] is None
+
+
+def test_artist_background_can_use_resolved_artist_identity():
+    artist = str(uuid4())
+    state = {'analysis_workspace': {'subject': '艺人生涯'}, 'entity_resolutions': [{'status': 'RESOLVED', 'mbid': artist}]}
+    entities, scope = _knowledge_scope(state, ConversationDecision(action='search_knowledge', public_summary='检索已核验艺人的背景', entity_type='artist', entity_mbid=artist))
+    assert entities == [{'type': 'ARTIST', 'id': artist, 'role': 'SUBJECT'}]
+    assert scope == 'RELATED_CONTEXT'

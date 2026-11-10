@@ -3,6 +3,7 @@ import json
 from types import SimpleNamespace
 
 import httpx
+import pytest
 
 from app.knowledge import KnowledgeRetriever, VersionedIndex, begin_evidence_session, finalize_evidence_session, evidence_source, fuse, row_id, stable_sources
 
@@ -97,3 +98,26 @@ def test_composite_tools_preserve_references_without_leaking_between_runs():
         await finalize_evidence_session(following, retriever)
         assert following.knowledge_sources == []
     asyncio.run(exercise())
+
+
+def test_document_preflight_uses_the_same_template_and_token_limit_as_indexing():
+    from app.knowledge import document_text
+    encoded = []
+    class Tokenizer:
+        def encode(self, text):
+            encoded.append(text)
+            return SimpleNamespace(ids=list(range(len(text))))
+    class Model:
+        model = SimpleNamespace(tokenizer=Tokenizer())
+        def embed(self, texts):
+            return iter([SimpleNamespace(tolist=lambda: [0.1])])
+    index = VersionedIndex('unused')
+    index.model = lambda _config: Model()
+    content = {'summary': '短表述', 'entities': []}
+    index.validate_document(content, {})
+    assert encoded[-1] == document_text(content)
+    index.vector(document_text(content), {'dimension': 1})
+    with pytest.raises(ValueError, match='KNOWLEDGE_INPUT_TOO_LONG'):
+        index.validate_document({**content, 'summary': '长' * 500}, {})
+    with pytest.raises(ValueError, match='KNOWLEDGE_INPUT_TOO_LONG'):
+        index.vector(document_text({**content, 'summary': '长' * 500}), {'dimension': 1})
