@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ConversationApplicationService {
+  @org.springframework.beans.factory.annotation.Autowired private com.soundseek.attachments.ImageAttachmentService attachments;
   static final int PROVIDER_CONTEXT_WINDOW_TOKENS = 1_000_000;
   static final int WORKING_CONTEXT_BUDGET_TOKENS = 850_000;
   static final int AUTO_COMPRESSION_TURNS = 20;
@@ -53,7 +54,11 @@ public class ConversationApplicationService {
   }
 
   @Transactional
-  public QueuedTurn enqueue(UUID id, UUID guestId, UUID clientMessageId, String content) {
+  public QueuedTurn enqueue(UUID id, UUID guestId, UUID clientMessageId, String content) {return enqueue(id,guestId,clientMessageId,content,List.of());}
+
+  @Transactional
+  public QueuedTurn enqueue(UUID id,UUID guestId,UUID clientMessageId,String content,List<UUID> imageIds) {
+    imageIds=com.soundseek.attachments.AttachmentIds.validate(content,imageIds);
     var c=conversations.findLockedOwned(id,guestId,ConversationStatus.DELETED).orElseThrow(NoSuchElementException::new);
     var replay = messages.findByConversationIdAndClientMessageId(id, clientMessageId);
     if (replay.isPresent()) {
@@ -61,8 +66,9 @@ public class ConversationApplicationService {
       return new QueuedTurn(existingRun.getAgentRunId(), AgentRunStatus.QUEUED.name(), true);
     }
     long next=messages.findTopByConversationIdOrderBySequenceNumberDesc(id).map(x->x.getSequenceNumber()+1).orElse(1L);
-    messages.save(ConversationMessage.user(id,clientMessageId,content,next));
-    if("新的音乐探索".equals(c.getTitle()))c.rename(content.substring(0,Math.min(36,content.length())));c.touch();
+    attachments.bind(guestId,id,imageIds);
+    var userMessage=ConversationMessage.user(id,clientMessageId,content,next);userMessage.setAttachmentIds(imageIds);messages.save(userMessage);
+    if("新的音乐探索".equals(c.getTitle()))c.rename(content.isBlank()?"图片对话":content.substring(0,Math.min(36,content.length())));c.touch();
     var runId=UUID.randomUUID();messages.save(ConversationMessage.run(id,runId,next+1));
     var transcript=messages.findByConversationIdOrderBySequenceNumberAsc(id);
     var body=agentBody(runId,id,guestId,content,c.getSummary(),activeTextHistory(c,transcript),recentCards(transcript,6),null,null);
@@ -149,11 +155,12 @@ public class ConversationApplicationService {
   }
 
   @Transactional
-  public ConversationMessage appendRunIntervention(UUID id,UUID guestId,UUID clientMessageId,String content){
+  public ConversationMessage appendRunIntervention(UUID id,UUID guestId,UUID clientMessageId,String content){return appendRunIntervention(id,guestId,clientMessageId,content,List.of());}
+ @Transactional public ConversationMessage appendRunIntervention(UUID id,UUID guestId,UUID clientMessageId,String content,List<UUID> imageIds){imageIds=com.soundseek.attachments.AttachmentIds.validate(content,imageIds);
     var conversation=conversations.findLockedOwned(id,guestId,ConversationStatus.DELETED).orElseThrow(NoSuchElementException::new);
     var replay=messages.findByConversationIdAndClientMessageId(id,clientMessageId);if(replay.isPresent())return replay.get();
     long next=messages.findTopByConversationIdOrderBySequenceNumberDesc(id).map(value->value.getSequenceNumber()+1).orElse(1L);
-    var message=messages.save(ConversationMessage.user(id,clientMessageId,content,next));conversation.touch();conversations.save(conversation);return message;
+    if(!imageIds.isEmpty())attachments.bind(guestId,id,imageIds);var message=ConversationMessage.user(id,clientMessageId,content,next);message.setAttachmentIds(imageIds);messages.save(message);conversation.touch();conversations.save(conversation);return message;
   }
 
   @Transactional
@@ -166,13 +173,14 @@ public class ConversationApplicationService {
   }
 
   @Transactional
-  public Turn begin(UUID id, UUID guestId, UUID clientMessageId, String content) {
+  public Turn begin(UUID id, UUID guestId, UUID clientMessageId, String content) {return begin(id,guestId,clientMessageId,content,List.of());}
+ @Transactional public Turn begin(UUID id,UUID guestId,UUID clientMessageId,String content,List<UUID> imageIds){imageIds=com.soundseek.attachments.AttachmentIds.validate(content,imageIds);
     var c = owned(id, guestId);
     var replay = messages.findByConversationIdAndClientMessageId(id, clientMessageId);
     if (replay.isPresent()) return new Turn(replay.get(), null, true);
     long next = messages.findTopByConversationIdOrderBySequenceNumberDesc(id).map(x -> x.getSequenceNumber() + 1).orElse(1L);
-    var user = messages.save(ConversationMessage.user(id, clientMessageId, content, next));
-    if ("新的音乐探索".equals(c.getTitle())) c.rename(content.substring(0, Math.min(36, content.length())));
+    if(!imageIds.isEmpty())attachments.bind(guestId,id,imageIds);var user=ConversationMessage.user(id,clientMessageId,content,next);user.setAttachmentIds(imageIds);messages.save(user);
+    if ("新的音乐探索".equals(c.getTitle())) c.rename(content.isBlank()?"图片对话":content.substring(0, Math.min(36, content.length())));
     c.touch();
     var runId = UUID.randomUUID();
     var run = messages.save(ConversationMessage.run(id, runId, next + 1));
@@ -240,12 +248,13 @@ public class ConversationApplicationService {
     agentRuns.fail(runId, "{\"code\":\"CONVERSATION_UNAVAILABLE\"}");
   }
 
-  public ConversationMessage reply(UUID id, UUID guestId, UUID clientMessageId, String content, java.util.function.Consumer<ConversationAgentGateway.Event> events) {
+  public ConversationMessage reply(UUID id, UUID guestId, UUID clientMessageId, String content, java.util.function.Consumer<ConversationAgentGateway.Event> events) {return reply(id,guestId,clientMessageId,content,events,List.of());}
+ public ConversationMessage reply(UUID id,UUID guestId,UUID clientMessageId,String content,java.util.function.Consumer<ConversationAgentGateway.Event> events,List<UUID> imageIds){
     var cached = idempotency.get(guestId, IdempotencyOperations.CONVERSATION_MESSAGE, clientMessageId.toString());
     if (cached.isPresent()) {
       return messages.findById(UUID.fromString(cached.get().payload())).orElseThrow();
     }
-    var turn = begin(id, guestId, clientMessageId, content);
+    var turn = begin(id, guestId, clientMessageId, content,imageIds);
     if (turn.replayed()) {
       return messages(id, guestId).stream()
           .filter(m -> m.getType() == ConversationMessageType.AGENT_TEXT && m.getSequenceNumber() > turn.user().getSequenceNumber())
@@ -298,13 +307,16 @@ public class ConversationApplicationService {
     return message;
   }
 
-  private Map<String, Object> agentBody(UUID runId, UUID conversationId, UUID guestId, String content, String summary, List<Map<String, String>> history, List<Map<String,Object>> cards, String forcedAction, Integer poolSize) {
+  private Map<String, Object> agentBody(UUID runId, UUID conversationId, UUID guestId, String content, String summary, List<Map<String, Object>> history, List<Map<String,Object>> cards, String forcedAction, Integer poolSize) {
     var body = new LinkedHashMap<String, Object>();
     body.put("requestId", runId);
     body.put("agentRunId", runId);
     body.put("conversationId", conversationId);
     body.put("guestId", guestId.toString());
-    body.put("userMessage", content);
+    body.put("userMessage", content.isBlank()?"请描述我本轮上传图片中的可见内容。先客观描述图片，不必先询问音乐偏好。":content);
+    var imageIds=messages.findByConversationIdOrderBySequenceNumberAsc(conversationId).stream().flatMap(message->message.getAttachmentIds().stream()).distinct().toList();
+    if(imageIds.size()>64)throw new IllegalArgumentException("图片上下文超过64张，请在新对话中继续。");
+    if(!imageIds.isEmpty())body.put("imageAttachments",attachments.references(guestId,conversationId,imageIds));
     body.put("summary", summary == null ? "" : summary);
     body.put("recentMessages", history);
     body.put("recentCards", cards);
@@ -347,10 +359,11 @@ public class ConversationApplicationService {
 
   private MemoryPlan memoryPlan(Conversation conversation, List<ConversationMessage> transcript, boolean force) {
     var unsummarized = transcript.stream()
-        .filter(message -> message.getTextContent() != null && !message.getTextContent().isBlank())
+        .filter(message -> (message.getTextContent() != null && !message.getTextContent().isBlank()) || !message.getAttachmentIds().isEmpty())
         .filter(message -> message.getSequenceNumber() > conversation.getSummaryThroughSequence())
         .toList();
     int estimatedTokens = estimateTokens(unsummarized.stream().map(ConversationMessage::getTextContent).toList()) + estimateTokens(List.of(conversation.getSummary() == null ? "" : conversation.getSummary()));
+    estimatedTokens += (int)Math.min(600_000,transcript.stream().flatMap(message->message.getAttachmentIds().stream()).distinct().count()*1024);
     int unsummarizedTurns = (int) unsummarized.stream().filter(message -> message.getRole() == ConversationMessageRole.USER).count();
     boolean thresholdReached = shouldCompress(unsummarizedTurns, estimatedTokens);
     int retainedStart = retainedStartForTurns(unsummarized, RETAINED_RECENT_TURNS);
@@ -358,7 +371,7 @@ public class ConversationApplicationService {
     var compressible = (force || thresholdReached) && compressibleCount > 0 ? unsummarized.subList(0, compressibleCount) : List.<ConversationMessage>of();
     long through = compressible.isEmpty() ? conversation.getSummaryThroughSequence() : compressible.get(compressible.size() - 1).getSequenceNumber();
     var segment = compressible.stream().map(message -> Map.<String,Object>of(
-        "role", message.getRole().name(), "content", message.getTextContent(), "sequenceNumber", message.getSequenceNumber())).toList();
+        "role", message.getRole().name(), "content", message.getTextContent() == null ? "" : message.getTextContent(), "attachmentIds", message.getAttachmentIds(), "sequenceNumber", message.getSequenceNumber())).toList();
     String reason = unsummarizedTurns >= AUTO_COMPRESSION_TURNS ? "AUTO_TURN_THRESHOLD" : estimatedTokens >= EMERGENCY_COMPRESSION_TOKENS ? "AUTO_TOKEN_THRESHOLD" : force && !segment.isEmpty() ? "MANUAL" : null;
     var fields = new LinkedHashMap<String,Object>();
     fields.put("summaryThroughSequence", conversation.getSummaryThroughSequence());
@@ -401,11 +414,11 @@ public class ConversationApplicationService {
     return (int)Math.min(Integer.MAX_VALUE, total);
   }
 
-  private List<Map<String,String>> activeTextHistory(Conversation conversation,List<ConversationMessage> transcript){
+  private List<Map<String,Object>> activeTextHistory(Conversation conversation,List<ConversationMessage> transcript){
     return transcript.stream()
         .filter(message -> message.getSequenceNumber() > conversation.getSummaryThroughSequence())
-        .filter(message -> message.getTextContent()!=null&&!message.getTextContent().isBlank())
-        .map(message -> Map.of("role",message.getRole().name(),"content",message.getTextContent()))
+        .filter(message -> (message.getTextContent()!=null&&!message.getTextContent().isBlank())||!message.getAttachmentIds().isEmpty())
+        .map(message -> Map.<String,Object>of("role",message.getRole().name(),"content",message.getTextContent()==null?"":message.getTextContent(),"attachmentIds",message.getAttachmentIds()))
         .toList();
   }
 

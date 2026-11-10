@@ -1,3 +1,4 @@
+import {ImageAttachments,ImageUploadButton,MessageImages,useImageAttachments} from './ImageAttachmentStrip'
 import { MusicLibrary } from './MusicLibraryPanel'
 import { MusicLibraryProvider, useMusicLibrary, SaveSongButton, type SavedSong } from './musicLibraryStore'
 import { VinylPlayer } from './VinylPlayer'
@@ -18,7 +19,7 @@ import './workspaceVisual.css'
 
 type Conversation = { id: string; title: string; summary?: string | null; summaryVersion?: number; summaryThroughSequence?: number; summaryUpdatedAt?: string | null; status: 'ACTIVE' | 'ARCHIVED' | 'DELETED'; lastMessageAt: string }
 type MemoryStatus = { estimatedTokens: number; tokenThreshold: number; workingContextBudget: number; providerContextWindow: number; percent: number; unsummarizedTurns: number; turnThreshold: number; retainedRecentTurns: number; autoCompressionReady: boolean; manualCompressionAvailable: boolean; summaryVersion: number; summaryThroughSequence: number; lastCompressedAt?: string | null }
-type Message = { id: string; agentRunId?: string | null; role: 'USER' | 'ASSISTANT' | 'SYSTEM'; type: 'USER_TEXT' | 'AGENT_TEXT' | 'AGENT_RUN' | 'SYSTEM_NOTE' | 'TOURNAMENT_CARD' | 'CANDIDATE_POOL_CARD' | 'REPORT_CARD' | 'CLARIFICATION_CARD' | 'RECOMMENDATION_CARD'; content?: string | null; cardType?: string | null; cardPayloadJson?: string | null; status: 'RUNNING' | 'COMPLETED' | 'FAILED'; sequenceNumber: number; createdAt: string }
+type Message = { id: string; agentRunId?: string | null; role: 'USER' | 'ASSISTANT' | 'SYSTEM'; type: 'USER_TEXT' | 'AGENT_TEXT' | 'AGENT_RUN' | 'SYSTEM_NOTE' | 'TOURNAMENT_CARD' | 'CANDIDATE_POOL_CARD' | 'REPORT_CARD' | 'CLARIFICATION_CARD' | 'RECOMMENDATION_CARD'; content?: string | null; attachmentIds?: string[]; cardType?: string | null; cardPayloadJson?: string | null; status: 'RUNNING' | 'COMPLETED' | 'FAILED'; sequenceNumber: number; createdAt: string }
 type RunEvent = AgentRunEvent
 type Progress = AgentRunProgress
 type Plan = AgentRunPlan
@@ -67,6 +68,7 @@ export type ConversationAppProps = { initialConversationId?: string; initialCont
 export function ConversationApp(props: ConversationAppProps = {}) { return <MusicLibraryProvider><ConversationWorkspace {...props} /></MusicLibraryProvider> }
 
 function ConversationWorkspace({ initialConversationId, initialContent, onHome }: ConversationAppProps) {
+  const imageDraft=useImageAttachments()
   const libraryScroll = useRef(0)
   const [libraryOpen,setLibraryOpen] = useState(() => new URLSearchParams(location.search).get('view') === 'music')
   function showLibrary(open: boolean) {
@@ -255,9 +257,9 @@ function ConversationWorkspace({ initialConversationId, initialContent, onHome }
     if (!currentRunId || queuedFollowUp || interventionUsed) return
     const clientId = crypto.randomUUID(); setNotice('')
     try {
-      const result = await submitRunFollowUp(currentRunId, content, clientId)
+      const result = await submitRunFollowUp(currentRunId, content, clientId,imageDraft.ids)
       setQueuedFollowUp(result.queued?.status === 'WAITING' ? result.queued : null)
-      if (result.accepted) setDraft('')
+      if (result.accepted) {setDraft('');imageDraft.clear()}
       setNotice(result.notice)
     } catch (error) {
       setDraft(content); setNotice(friendlyError(error))
@@ -266,7 +268,7 @@ function ConversationWorkspace({ initialConversationId, initialContent, onHome }
 
   async function interveneQueuedMessage() {
     if (!currentRunId || !queuedFollowUp || queuedFollowUp.status !== 'WAITING') return
-    const optimistic: Message = { id: queuedFollowUp.clientMessageId, role: 'USER', type: 'USER_TEXT', content: queuedFollowUp.content, status: 'COMPLETED', sequenceNumber: Date.now(), createdAt: queuedFollowUp.createdAt }
+    const optimistic: Message = { id: queuedFollowUp.clientMessageId, role: 'USER', type: 'USER_TEXT', content: queuedFollowUp.content, attachmentIds:queuedFollowUp.attachmentIds, status: 'COMPLETED', sequenceNumber: Date.now(), createdAt: queuedFollowUp.createdAt }
     setNotice('')
     try {
       await api(`/agent-runs/${currentRunId}/next-message:intervene`, { method: 'POST' })
@@ -290,17 +292,18 @@ function ConversationWorkspace({ initialConversationId, initialContent, onHome }
     }
   }
   async function sendContent(content: string) {
-    if (!content || !current || candidateRun) return
+    if ((!content&&!imageDraft.images.length) || !imageDraft.ready || !current || candidateRun) return
     if(location.hash.startsWith('#message-'))history.replaceState({},'',location.pathname+location.search)
     if (pending) { await queueNextMessage(content); return }
-    const clientId = crypto.randomUUID(); const optimistic: Message = { id: clientId, role: 'USER', type: 'USER_TEXT', content, status: 'COMPLETED', sequenceNumber: Date.now(), createdAt: new Date().toISOString() }
+    const attachmentIds=imageDraft.ids,selectedImages=imageDraft.images;
+    const clientId = crypto.randomUUID(); const optimistic: Message = { id: clientId, role: 'USER', type: 'USER_TEXT', content, attachmentIds, status: 'COMPLETED', sequenceNumber: Date.now(), createdAt: new Date().toISOString() }
     setMessages(previous => [...previous, optimistic]); setDraft(''); setPending(true); setProgress([]); setPlan(null); setPlanHistory([]); setStreamingResponse(''); setCollapsed(false); setNotice('')
     try {
-      const queued = await enqueueAgentRun(`/conversations/${current.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': clientId }, body: JSON.stringify({ content }) })
-      setCurrentRunId(queued.runId)
+      const queued = await enqueueAgentRun(`/conversations/${current.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': clientId }, body: JSON.stringify({ content,attachmentIds }) })
+      imageDraft.clear();setCurrentRunId(queued.runId)
       await followConversationRunChain(queued.runId)
       await Promise.all([refreshMessages(), refreshMemory()]); const refreshed = await api<Conversation[]>('/conversations'); setConversations(refreshed); setCurrent(refreshed.find(item => item.id === current.id) ?? current)
-    } catch (error) { setMessages(previous => previous.filter(item => item.id !== clientId)); setDraft(content); setNotice(friendlyError(error)) } finally { setStreamingResponse(''); setCurrentRunId(null); setQueuedFollowUp(null); setInterventionUsed(false); setPending(false); setCollapsed(true) }
+    } catch (error) { setMessages(previous => previous.filter(item => item.id !== clientId)); setDraft(content);imageDraft.restore(selectedImages.map(image=>({...image,url:`/api/v1/attachments/${image.id}/content`}))); setNotice(friendlyError(error)) } finally { setStreamingResponse(''); setCurrentRunId(null); setQueuedFollowUp(null); setInterventionUsed(false); setPending(false); setCollapsed(true) }
   }
   async function compressConversationMemory() {
     if (!current || runActive || compressingMemory || !memory?.manualCompressionAvailable) return
@@ -318,8 +321,8 @@ function ConversationWorkspace({ initialConversationId, initialContent, onHome }
   }
   function regenerateLastAnswer(instruction = '') {
     const lastAgentIndex = messages.map(message => message.role === 'ASSISTANT' && message.type === 'AGENT_TEXT').lastIndexOf(true)
-    const lastUser = [...messages.slice(0, lastAgentIndex < 0 ? messages.length : lastAgentIndex)].reverse().find(message => message.role === 'USER' && message.type === 'USER_TEXT' && message.content?.trim())
-    if (lastUser?.content) { setRegenerationOpen(false); setRegenerationInstruction(''); void sendContent(`请重新生成上一轮回答。原始请求是：${lastUser.content}${instruction.trim() ? `\n补充要求：${instruction.trim()}` : ''}`) }
+    const lastUser = [...messages.slice(0, lastAgentIndex < 0 ? messages.length : lastAgentIndex)].reverse().find(message => message.role === 'USER' && message.type === 'USER_TEXT' && (message.content?.trim() || message.attachmentIds?.length))
+    if (lastUser) { setRegenerationOpen(false); setRegenerationInstruction(''); void sendContent(`请重新生成上一轮回答。原始请求是：${lastUser.content?.trim() || '请重新描述上一轮上传图片中的可见内容。'}${instruction.trim() ? `\n补充要求：${instruction.trim()}` : ''}`) }
   }
   function startCandidateRun(size: 16 | 32, preferenceText: string) {
     if (!preferenceText.trim()) { setNotice('先描述一下你想放进世界杯的音乐偏好。'); return }
@@ -340,7 +343,7 @@ function ConversationWorkspace({ initialConversationId, initialContent, onHome }
   const runActive = pending || Boolean(candidateRun)
   const hasRunState = runActive || Boolean(plan) || progress.length > 0
   const composerLocked = !current || Boolean(candidateRun) || (runActive && (!currentRunId || Boolean(queuedFollowUp) || interventionUsed))
-  const composerAction = composerPrimaryAction(runActive, Boolean(draft.trim()), Boolean(currentRunId))
+  const composerAction = composerPrimaryAction(runActive, Boolean(draft.trim()||imageDraft.images.length), Boolean(currentRunId))
   useEffect(() => {
     if (runActive && !wasRunActive.current) { runStartedAt.current = Date.now(); setRunElapsedMs(0) }
     wasRunActive.current = runActive
@@ -375,15 +378,16 @@ function ConversationWorkspace({ initialConversationId, initialContent, onHome }
           else if (message.type === 'TOURNAMENT_CARD') content = <TournamentStatusCard payload={message.cardPayloadJson} onProgress={item => setProgress(previous => [...previous, item])} onPlan={recordPlan} onRunActive={active => { setPending(active); if (active) { setProgress([]); setPlan(null); setPlanHistory([]); setCollapsed(false) } else setCollapsed(true) }} onReportReady={(report, tournamentId, championTitle) => void persistCard('REPORT_CARD', 'PREFERENCE_REPORT', { tournamentId, reportId: report.reportId, version: report.version, status: report.status, championTitle })} />
           else if (message.type === 'REPORT_CARD' && message.cardType === 'EXPLORATION_REPORT') content = <ExplorationReportCard payload={message.cardPayloadJson} conversationId={current?.id} />
           else if (message.type === 'REPORT_CARD') content = <ReportCard payload={message.cardPayloadJson} />
+          else if (message.role === 'USER' && !message.content?.trim()) content = null
           else content = <article className={`conversation-message ${message.role === 'USER' ? 'user' : 'agent'}`}>{message.role !== 'USER' && <span className="message-agent-mark"><BrandMark /></span>}<MessageBody content={message.content || ''} /></article>
-          return <TimedMessage key={message.id} id={message.id} createdAt={message.createdAt} animate={newCardIds.has(message.id)}>{content}</TimedMessage>
+          return <TimedMessage key={message.id} id={message.id} createdAt={message.createdAt} animate={newCardIds.has(message.id)}>{message.role==='USER'&&<MessageImages ids={message.attachmentIds} />}{content}</TimedMessage>
         })}
         {candidateRun && <CandidateGenerationCard size={candidateRun.size} preferenceText={candidateRun.preferenceText} onProgress={(item) => setProgress(previous => [...previous, item])} onPlan={recordPlan} onRunId={setCurrentRunId} onCompleted={async payload => { await persistCard('CANDIDATE_POOL_CARD', 'CANDIDATE_POOL', payload); setCandidateRun(null); setCollapsed(true) }} onFailed={message => { setNotice(message); setCandidateRun(null); setCollapsed(true) }} />}
         {streamingResponse && <article className="conversation-message agent streaming-response"><span className="message-agent-mark"><BrandMark /></span><MessageBody content={streamingResponse} /><i className="streaming-response-caret" aria-hidden="true" /></article>}
         {hasRunState && <AgentActivity progress={progress} collapsed={collapsed} active={runActive} elapsedMs={runElapsedMs} canStop={false} canRegenerate={messages.some(message => message.role === 'USER' && message.type === 'USER_TEXT')} onToggle={() => setCollapsed(value => !value)} onStop={() => void stopCurrentRun()} onRegenerate={() => setRegenerationOpen(value => !value)} />}
         {regenerationOpen && !runActive && <section className="regeneration-panel"><strong>重新生成这轮回答</strong><p>可直接重试，也可以附加一个调整方向。</p><div>{['更冷门一些', '减少相同艺人', '换一批歌曲'].map(item => <button type="button" key={item} onClick={() => setRegenerationInstruction(item)}>{item}</button>)}</div><textarea value={regenerationInstruction} onChange={event => setRegenerationInstruction(event.target.value)} placeholder="例如：更冷门一些，减少相同艺人" /><footer><button type="button" onClick={() => setRegenerationOpen(false)}>取消</button><button type="button" className="primary" onClick={() => regenerateLastAnswer(regenerationInstruction)}>重新生成</button></footer></section>}
       </section>
-      <form className="conversation-composer" onSubmit={event => void send(event)}><div className="composer-frame"><textarea value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder={queuedFollowUp ? '已有一条消息等待发送' : interventionUsed ? '已调整本轮方向，请等待这一轮完成' : pending && currentRunId ? '输入下一条消息……' : '和寻声聊聊音乐……'} maxLength={2000} disabled={composerLocked} />{queuedFollowUp && <div className="composer-follow-up"><span><small>下一条消息</small><strong>{queuedFollowUp.content}</strong></span><button type="button" onClick={() => void interveneQueuedMessage()}>立即介入本轮</button></div>}<div className="composer-toolbar"><div className="composer-memory"><button className="memory-compress-button" type="button" aria-label="整理较早的对话" title={memory?.manualCompressionAvailable ? '整理较早的对话' : '目前无需整理'} disabled={!memory?.manualCompressionAvailable || runActive || compressingMemory} onClick={() => void compressConversationMemory()}>{compressingMemory ? <span className="memory-spinner" /> : <MemoryIcon />}</button>{memory && <div className="memory-meter" title="当前对话的记忆占用；较长时会自动整理较早内容" role="progressbar" aria-label="对话记忆占用" aria-valuemin={0} aria-valuemax={100} aria-valuenow={memory.percent}><span><i style={{ width: `${memory.percent}%` }} /></span></div>}</div><button className={`composer-send ${composerAction === 'stop' ? 'stop' : ''}`} type={composerAction === 'stop' ? 'button' : 'submit'} onClick={composerAction === 'stop' ? () => void stopCurrentRun() : undefined} aria-label={composerAction === 'stop' ? '停止生成' : '发送消息'} title={composerAction === 'stop' ? '停止生成' : '发送'} disabled={composerAction === 'disabled' || (composerAction === 'send' && composerLocked)}>{composerAction === 'stop' ? <StopIcon /> : pending && !currentRunId ? <span className="composer-spinner" /> : <SendIcon />}</button></div></div><small>{queuedFollowUp ? '本轮结束后会自动发送；需要改变当前结果时再选择立即介入。' : interventionUsed ? '本轮已经调整过一次，完成后可以继续对话。' : pending && currentRunId ? '直接发送会排到下一轮。' : memory?.autoCompressionReady ? '稍后会自动整理较早的对话。' : '请核对重要的音乐资料与链接。'}</small></form>
+      <form className="conversation-composer" onSubmit={event => void send(event)}><div className="composer-frame"><ImageAttachments images={imageDraft.images} onRemove={imageDraft.remove} onRetry={imageDraft.retry} disabled={composerLocked} />{imageDraft.error&&<p className="image-error" role="alert">{imageDraft.error}</p>}<textarea value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder={queuedFollowUp ? '已有一条消息等待发送' : interventionUsed ? '已调整本轮方向，请等待这一轮完成' : pending && currentRunId ? '输入下一条消息……' : '和寻声聊聊音乐……'} maxLength={2000} disabled={composerLocked} />{queuedFollowUp && <div className="composer-follow-up"><MessageImages ids={queuedFollowUp.attachmentIds} /><span><small>下一条消息</small><strong>{queuedFollowUp.content}</strong></span><button type="button" onClick={() => void interveneQueuedMessage()}>立即介入本轮</button></div>}<div className="composer-toolbar"><div className="composer-memory"><ImageUploadButton disabled={composerLocked} onFiles={files=>void imageDraft.add(files)} /><button className="memory-compress-button" type="button" aria-label="整理较早的对话" title={memory?.manualCompressionAvailable ? '整理较早的对话' : '目前无需整理'} disabled={!memory?.manualCompressionAvailable || runActive || compressingMemory} onClick={() => void compressConversationMemory()}>{compressingMemory ? <span className="memory-spinner" /> : <MemoryIcon />}</button>{memory && <div className="memory-meter" title="当前对话的记忆占用；较长时会自动整理较早内容" role="progressbar" aria-label="对话记忆占用" aria-valuemin={0} aria-valuemax={100} aria-valuenow={memory.percent}><span><i style={{ width: `${memory.percent}%` }} /></span></div>}</div><button className={`composer-send ${composerAction === 'stop' ? 'stop' : ''}`} type={composerAction === 'stop' ? 'button' : 'submit'} onClick={composerAction === 'stop' ? () => void stopCurrentRun() : undefined} aria-label={composerAction === 'stop' ? '停止生成' : '发送消息'} title={composerAction === 'stop' ? '停止生成' : '发送'} disabled={!imageDraft.ready || composerAction === 'disabled' || (composerAction === 'send' && composerLocked)}>{composerAction === 'stop' ? <StopIcon /> : pending && !currentRunId ? <span className="composer-spinner" /> : <SendIcon />}</button></div></div><small>{queuedFollowUp ? '本轮结束后会自动发送；需要改变当前结果时再选择立即介入。' : interventionUsed ? '本轮已经调整过一次，完成后可以继续对话。' : pending && currentRunId ? '直接发送会排到下一轮。' : memory?.autoCompressionReady ? '稍后会自动整理较早的对话。' : '请核对重要的音乐资料与链接。'}</small></form>
     </section>
     {libraryOpen && <MusicLibrary conversationId={current?.id} onMenu={()=>setMobileSidebarOpen(true)} guest={!authSession?.authenticated} onBack={()=>showLibrary(false)} onSource={song=>void sourceSong(song)} onTalk={content=>{setDraft(previous=>previous.trim() ? previous+'\n\n'+content : content);showLibrary(false);requestAnimationFrame(()=>document.querySelector<HTMLTextAreaElement>('.conversation-composer textarea')?.focus())}} />}
     <aside className="conversation-agent-panel"><AgentPlanPanel plans={planHistory.length ? planHistory : (plan ? [plan] : [])} active={runActive} latest={progress[progress.length - 1]} /></aside>

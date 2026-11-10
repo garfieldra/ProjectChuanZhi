@@ -15,6 +15,7 @@ public class GuestAssetMergeService {
     if (source.equals(target)) return;
     var ordered = source.compareTo(target) < 0 ? new UUID[]{source, target} : new UUID[]{target, source};
     for (var guest : ordered) jdbc.query("SELECT id FROM guest_session WHERE id=UUID_TO_BIN(?) FOR UPDATE", result -> {}, guest.toString());
+    jdbc.update("UPDATE image_attachment SET guest_session_id=UUID_TO_BIN(?) WHERE guest_session_id=UUID_TO_BIN(?)", target.toString(), source.toString());
     // The target's existing save wins; all other saves keep their original provenance.
     jdbc.update("DELETE source FROM saved_song source JOIN saved_song target ON target.guest_session_id=UUID_TO_BIN(?) AND target.recording_id=source.recording_id WHERE source.guest_session_id=UUID_TO_BIN(?)", target.toString(), source.toString());
     jdbc.update("UPDATE saved_song SET guest_session_id=UUID_TO_BIN(?) WHERE guest_session_id=UUID_TO_BIN(?)", target.toString(), source.toString());

@@ -1,0 +1,176 @@
+.image-upload-button {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  color: var(--muted, #6b675f);
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+}
+.image-upload-button svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+.image-upload-button:hover {
+  background: var(--accent-soft, #f4e8e3);
+  color: var(--accent, #a64b3c);
+}
+.image-upload-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.image-attachments {
+  min-width: 0;
+  padding: 14px 18px 0;
+}
+.image-thumbnail-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.image-thumbnail {
+  width: 76px;
+  height: 76px;
+  position: relative;
+  flex: none;
+}
+.image-thumbnail-open {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 1px solid var(--line, #dedbd4);
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  background: #efeee9;
+  cursor: pointer;
+}
+.image-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.image-overflow-count {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #24232099;
+  color: #fff;
+  font-size: 23px;
+  font-weight: 600;
+}
+.image-remove {
+  position: absolute;
+  right: -5px;
+  top: -5px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--line, #dedbd4);
+  border-radius: 50%;
+  background: var(--surface, #fffefb);
+  color: var(--ink, #242320);
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  cursor: pointer;
+}
+.image-upload-state {
+  position: absolute;
+  bottom: 3px;
+  left: 3px;
+  right: 3px;
+  border: 0;
+  border-radius: 5px;
+  background: #242320cc;
+  color: white;
+  text-align: center;
+  font-size: 11px;
+  padding: 3px;
+  pointer-events: none;
+}
+.image-retry {
+  background: #963e30;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.image-collapse {
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent, #a64b3c);
+  font-size: 12px;
+}
+.image-error {
+  color: #963e30;
+  font-size: 12px;
+  margin: 7px 0;
+}
+.image-preview-dialog {
+  border: 1px solid var(--line, #dedbd4);
+  border-radius: 16px;
+  padding: 24px;
+  background: var(--surface, #fffefb);
+  max-width: 90vw;
+  max-height: 90dvh;
+}
+.image-preview-dialog::backdrop {
+  background: #242320aa;
+}
+.image-preview-dialog > img {
+  display: block;
+  max-width: 80vw;
+  max-height: 75dvh;
+  object-fit: contain;
+}
+.image-preview-dialog > button {
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  background: transparent;
+  border: 0;
+  font-size: 24px;
+  cursor: pointer;
+}
+.conversation-message-shell > .image-attachments {
+  width: fit-content;
+  max-width: 100%;
+  margin-left: auto;
+  padding: 0 0 12px;
+}
+.image-attachments button:focus-visible,
+.image-upload-button:focus-visible {
+  outline: 2px solid var(--accent, #a64b3c);
+  outline-offset: 3px;
+}
+@media (max-width: 680px) {
+  .image-attachments {
+    padding: 12px 14px 0;
+  }
+  .image-thumbnail {
+    width: 64px;
+    height: 64px;
+  }
+}
+
+.conversation-composer .composer-memory .image-upload-button {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: transparent;
+}
+.conversation-composer .composer-memory .image-upload-button svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+  fill: none;
+}

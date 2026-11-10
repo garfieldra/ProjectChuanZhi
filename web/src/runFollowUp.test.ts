@@ -20,6 +20,12 @@ describe('follow-up conflict recovery', () => {
     const value = await submitRunFollowUp('run','继续分析','client')
     expect(value.accepted).toBe(false); expect(value.queued).toBeNull(); expect(value.notice).toContain('本轮已结束')
   })
+  it('does not mistake another image-only message for the current draft on conflict', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(new Response(null, {status:409})).mockResolvedValueOnce(new Response(JSON.stringify({...queued, content:'', attachmentIds:['old-image']})))
+    vi.stubGlobal('fetch', fetch)
+    expect((await submitRunFollowUp('run', '', 'client', ['new-image'])).accepted).toBe(false)
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({content:'', attachmentIds:['new-image']})
+  })
   it('reports transport failure without losing the draft', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null,{status:503})))
     await expect(submitRunFollowUp('run','继续分析','client')).rejects.toThrow('输入已保留')

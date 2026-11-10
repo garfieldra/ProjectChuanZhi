@@ -9,6 +9,8 @@ services:
     depends_on:
       java-service:
         condition: service_healthy
+    volumes:
+      - image-attachment-data:/app/data/attachments
     environment:
       VITE_API_BASE_URL: /api
       VITE_API_PROXY_TARGET: http://java-service:8080
@@ -268,6 +270,7 @@ networks:
   research-egress:
 
 volumes:
+  image-attachment-data:
   mysql-data:
   redis-data:
   etcd-data:

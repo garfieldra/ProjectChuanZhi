@@ -8,6 +8,10 @@ server:
         secure: ${SESSION_COOKIE_SECURE:false}
 
 spring:
+  servlet:
+    multipart:
+      max-file-size: 8MB
+      max-request-size: 9MB
   application:
     name: soundseek-java-service
   datasource:

@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AgentRunFollowUpApplicationService {
+  @org.springframework.beans.factory.annotation.Autowired private com.soundseek.attachments.ImageAttachmentService attachments;
   private final AgentRunRepository runs;
   private final AgentRunFollowUpRepository followUps;
   private final AgentRunApplicationService agentRuns;
@@ -30,7 +31,11 @@ public class AgentRunFollowUpApplicationService {
   }
 
   @Transactional
-  public AgentRunFollowUp queue(UUID runId, UUID guestId, UUID clientMessageId, String content) {
+  public AgentRunFollowUp queue(UUID runId, UUID guestId, UUID clientMessageId, String content) {return queue(runId,guestId,clientMessageId,content,List.of());}
+
+  @Transactional
+  public AgentRunFollowUp queue(UUID runId,UUID guestId,UUID clientMessageId,String content,List<UUID> imageIds) {
+    imageIds=com.soundseek.attachments.AttachmentIds.validate(content,imageIds);
     var run = runs.findLockedById(runId).orElseThrow(NoSuchElementException::new);
     assertOwnedConversationRun(run, guestId);
     if (!(run.getStatus() == AgentRunStatus.QUEUED || run.getStatus() == AgentRunStatus.RUNNING)) {
@@ -39,7 +44,8 @@ public class AgentRunFollowUpApplicationService {
     var replay = followUps.findByRunIdAndClientMessageId(runId, clientMessageId);
     if (replay.isPresent()) return replay.get();
     if (followUps.findByRunId(runId).isPresent()) throw new IllegalStateException("FOLLOW_UP_ALREADY_WAITING");
-    var value = followUps.save(AgentRunFollowUp.waiting(run, clientMessageId, content));
+    if(!imageIds.isEmpty())attachments.bind(guestId,run.getConversationId(),imageIds);
+    var value=AgentRunFollowUp.waiting(run,clientMessageId,content);value.setAttachmentIds(imageIds);followUps.save(value);
     agentRuns.appendEvent(runId, AgentRunEventType.FOLLOW_UP_QUEUED,
         write(Map.of("phase", "follow_up_waiting", "message", "下一条消息已排队，将在本轮完成后自动发送")));
     return value;
@@ -81,7 +87,7 @@ public class AgentRunFollowUpApplicationService {
         .filter(value -> value.getStatus() == AgentRunFollowUpStatus.WAITING);
     if (waiting.isEmpty()) return Optional.empty();
     var value = waiting.get();
-    var next = conversations.enqueue(value.getConversationId(), value.getGuestSessionId(), value.getClientMessageId(), value.getContent());
+    var next = conversations.enqueue(value.getConversationId(), value.getGuestSessionId(), value.getClientMessageId(), value.getContent(),value.getAttachmentIds());
     value.dispatch(next.runId());
     followUps.save(value);
     agentRuns.appendEvent(runId, AgentRunEventType.FOLLOW_UP_DISPATCHED,

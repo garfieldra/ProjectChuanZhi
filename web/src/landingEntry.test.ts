@@ -40,6 +40,13 @@ describe('homepage to Agent handoff', () => {
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 
+  it('sends an image-only homepage draft with its ordered attachment references', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(json({})).mockResolvedValueOnce(json({ id: 'image-conversation' }, 201)).mockResolvedValueOnce(json({ runId: 'image-run' }, 202))
+    vi.stubGlobal('fetch', fetch)
+    await beginExploration({ content: '', attachmentIds: ['first', 'second'], messageKey: 'image-key' })
+    expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({ content: '', attachmentIds: ['first', 'second'] })
+  })
+
   it('rejects empty and oversized messages before making requests', async () => {
     const fetch = vi.fn(); vi.stubGlobal('fetch', fetch)
     await expect(beginExploration({ content: '   ', messageKey: 'x' })).rejects.toThrow('1–2000')

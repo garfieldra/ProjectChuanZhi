@@ -2,6 +2,7 @@ import { apiFetch } from './apiClient'
 
 export type ExplorationEntry = {
   content: string
+  attachmentIds?: string[]
   messageKey: string
   conversationId?: string
   runId?: string
@@ -27,7 +28,7 @@ async function request(path: string, options: RequestInit = {}) {
 // The existing message endpoint deduplicates by Idempotency-Key.
 export async function beginExploration(entry: ExplorationEntry): Promise<string> {
   const content = entry.content.trim()
-  if (!content || content.length > 2000) throw new Error('请写下 1–2000 字的音乐想法。')
+  if ((!content && !entry.attachmentIds?.length) || content.length > 2000) throw new Error('请写下 1–2000 字的音乐想法。')
   if (entry.conversationId && entry.runId) return entry.conversationId
   // Establish the guest and CSRF cookies before the first write from the homepage.
   await request('/auth/session')
@@ -41,7 +42,7 @@ export async function beginExploration(entry: ExplorationEntry): Promise<string>
   const queued = await request(`/conversations/${encodeURIComponent(conversationId)}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Idempotency-Key': entry.messageKey },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, ...(entry.attachmentIds?.length ? {attachmentIds:entry.attachmentIds} : {}) }),
   })
   if (typeof queued.runId !== 'string' || !queued.runId) throw new Error('探索暂时没有开启成功，请再试一次。')
   entry.runId = queued.runId

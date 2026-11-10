@@ -64,15 +64,15 @@ public class AgentRunController {
   @Transactional
   ResponseEntity<InterventionView> intervene(@PathVariable UUID id,@RequestHeader("Idempotency-Key") UUID key,@Valid @RequestBody InterventionBody body,HttpServletRequest request){
     var guest=((GuestSession)request.getAttribute(GuestIdentityFilter.ATTRIBUTE)).getId();rateLimit.assertAgentRunAnswerAllowed(guest);
-    var intervention=agentRuns.submitIntervention(id,guest,key,body.content().trim());
-    conversations.appendRunIntervention(intervention.getConversationId(),guest,key,intervention.getContent());
+    var intervention=agentRuns.submitIntervention(id,guest,key,body.content().trim(),body.attachmentIds());
+    conversations.appendRunIntervention(intervention.getConversationId(),guest,key,intervention.getContent(),intervention.getAttachmentIds());
     return ResponseEntity.accepted().body(InterventionView.of(intervention));
   }
 
   @PostMapping("/{id}/next-message")
   ResponseEntity<FollowUpView> queueNextMessage(@PathVariable UUID id,@RequestHeader("Idempotency-Key") UUID key,@Valid @RequestBody InterventionBody body,HttpServletRequest request){
     var guest=((GuestSession)request.getAttribute(GuestIdentityFilter.ATTRIBUTE)).getId();rateLimit.assertAgentRunAnswerAllowed(guest);
-    return ResponseEntity.accepted().body(FollowUpView.of(followUps.queue(id,guest,key,body.content().trim())));
+    return ResponseEntity.accepted().body(FollowUpView.of(followUps.queue(id,guest,key,body.content().trim(),body.attachmentIds())));
   }
 
   @GetMapping("/{id}/next-message")
@@ -90,8 +90,8 @@ public class AgentRunController {
       return ResponseEntity.ok(InterventionView.of(agentRuns.intervention(id,existing.getClientMessageId()).orElseThrow()));
     }
     var queued=followUps.waitingForIntervention(id,guest);
-    var intervention=agentRuns.submitIntervention(id,guest,queued.getClientMessageId(),queued.getContent());
-    conversations.appendRunIntervention(queued.getConversationId(),guest,queued.getClientMessageId(),queued.getContent());
+    var intervention=agentRuns.submitIntervention(id,guest,queued.getClientMessageId(),queued.getContent(),queued.getAttachmentIds());
+    conversations.appendRunIntervention(queued.getConversationId(),guest,queued.getClientMessageId(),queued.getContent(),queued.getAttachmentIds());
     followUps.markIntervened(queued);
     return ResponseEntity.accepted().body(InterventionView.of(intervention));
   }
@@ -147,9 +147,9 @@ public class AgentRunController {
   }
 
   record Selection(@NotBlank @Size(max = 120) String mention, @NotNull UUID mbid, @NotBlank @Size(max = 160) String name) {}
-  record InterventionBody(@NotBlank @Size(max=2000) String content) {}
+  record InterventionBody(@Size(max=2000) String content,@Size(max=10) List<UUID> attachmentIds){InterventionBody{content=content==null?"":content;attachmentIds=com.soundseek.attachments.AttachmentIds.validate(content,attachmentIds);}}
   record InterventionView(UUID id,long sequenceNumber,String status,java.time.Instant createdAt){static InterventionView of(AgentRunIntervention value){return new InterventionView(value.getId(),value.getSequenceNumber(),value.getStatus().name(),value.getCreatedAt());}}
-  record FollowUpView(UUID id,UUID clientMessageId,String content,String status,UUID nextRunId,java.time.Instant createdAt){static FollowUpView of(AgentRunFollowUp value){return new FollowUpView(value.getId(),value.getClientMessageId(),value.getContent(),value.getStatus().name(),value.getNextRunId(),value.getCreatedAt());}}
+  record FollowUpView(UUID id,UUID clientMessageId,String content,List<UUID> attachmentIds,String status,UUID nextRunId,java.time.Instant createdAt){static FollowUpView of(AgentRunFollowUp value){return new FollowUpView(value.getId(),value.getClientMessageId(),value.getContent(),value.getAttachmentIds(),value.getStatus().name(),value.getNextRunId(),value.getCreatedAt());}}
 
   record EventView(long sequenceNumber, String type, String payloadJson, java.time.Instant createdAt) {
     static EventView of(AgentRunEvent event) {

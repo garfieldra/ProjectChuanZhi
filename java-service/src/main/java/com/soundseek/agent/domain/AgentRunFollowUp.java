@@ -7,7 +7,10 @@ import java.util.UUID;
 @Entity
 @Table(name = "agent_run_follow_up")
 public class AgentRunFollowUp {
-  @Id private UUID id;
+  @Column(name="attachment_ids",nullable=false,length=400) private String attachmentIds="";
+ public java.util.List<java.util.UUID> getAttachmentIds(){return com.soundseek.attachments.AttachmentIds.decode(attachmentIds);}
+ public void setAttachmentIds(java.util.List<java.util.UUID> ids){attachmentIds=com.soundseek.attachments.AttachmentIds.encode(ids);}
+ @Id private UUID id;
   @Column(name = "run_id", nullable = false) private UUID runId;
   @Column(name = "conversation_id", nullable = false) private UUID conversationId;
   @Column(name = "guest_session_id", nullable = false) private UUID guestSessionId;

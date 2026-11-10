@@ -1,4 +1,5 @@
 from __future__ import annotations
+from .image_input import ImageInputBudgetError, multimodal_prompt
 
 import asyncio
 import json
@@ -137,7 +138,7 @@ class ConversationReActRuntime:
         )
         self.graph = self._build().compile(checkpointer=MemorySaver())
 
-    async def _invoke_validated(self, schema, prompt: str):
+    async def _invoke_validated(self, schema, prompt: str, request=None):
         """Use native structured output, then retry as validated plain JSON.
 
         DeepSeek's OpenAI-compatible endpoint can occasionally fail to finish
@@ -148,7 +149,7 @@ class ConversationReActRuntime:
         try:
             value = await self.model.with_structured_output(
                 schema, method="function_calling"
-            ).ainvoke(prompt)
+            ).ainvoke(await multimodal_prompt(prompt, request))
             if isinstance(value, schema):
                 return value
             return schema.model_validate(value)
@@ -159,7 +160,7 @@ class ConversationReActRuntime:
                 + json.dumps(schema.model_json_schema(), ensure_ascii=False)
             )
             try:
-                response = await self.model.ainvoke(json_prompt)
+                response = await self.model.ainvoke(await multimodal_prompt(json_prompt, request))
                 return schema.model_validate(_parse_model_json(response.content))
             except Exception as json_error:
                 raise RuntimeError(
@@ -178,7 +179,7 @@ class ConversationReActRuntime:
 字面提取的艺人：{json.dumps(literal_artists, ensure_ascii=False)}
 要求：namedArtists 只能保留用户实际点名的艺人；声音、情绪、歌词主题和 discoveryAxes 可以根据点名艺人的公开常识作保守推断，但不得写成人格或教育背景事实。evidenceSpans 必须来自用户原话。"""
         try:
-            profile = await self.model.with_structured_output(MusicPreferenceProfile, method="function_calling").ainvoke(prompt)
+            profile = await self.model.with_structured_output(MusicPreferenceProfile, method="function_calling").ainvoke(await multimodal_prompt(prompt, request))
             if not isinstance(profile, MusicPreferenceProfile):
                 raise TypeError("invalid preference profile")
         except Exception:
@@ -212,7 +213,7 @@ class ConversationReActRuntime:
 - 不得虚构歌词、音频参数、采访或创作事实。
 返回 MusicAnalysisPlan。"""
         try:
-            plan = await self._invoke_validated(MusicAnalysisPlan, prompt)
+            plan = await self._invoke_validated(MusicAnalysisPlan, prompt, request)
         except Exception:
             return fallback
         previous_payload = previous.get("payload", {})
@@ -331,7 +332,7 @@ class ConversationReActRuntime:
             },
         }
         prompt = f"""你是 SoundSeek 对话运行时的 ReAct 决策器，不输出思维链。
-你是统一音乐探索 Agent。世界杯是可选 Skill，不是产品主流程；候选池构建、赛事分析和报告撰写是可调用的复合 Tool，而不是独立 Agent。
+你是统一音乐探索 Agent，也支持用户直接上传图片进行通用图像问答。仅上传图片而没有文字时，先客观描述可见内容，不必先澄清音乐偏好；图片与音乐无关本身不构成阻塞理由。世界杯是可选 Skill，不是产品主流程；候选池构建、赛事分析和报告撰写是可调用的复合 Tool，而不是独立 Agent。
 你只能选择一个动作：
 - search_web：问题需要当前公开音乐资料、外部事实或具体推荐线索；用户要求推荐、相似艺人/歌曲或风格延展时，应先搜索再回答，除非当前观察中已有足够公开资料；
 - read_source：已有搜索来源，但摘要不足以支持创作背景、采访、制作署名或关键事实时，选择最有价值的来源精读；在 source_ref 填写 analysisSources 中的 S1、S2 等引用。不要重复读取 readSourceRefs 中的来源；
@@ -360,7 +361,7 @@ class ConversationReActRuntime:
 可按需加载的 Skill：{json.dumps(self.skills.summaries(), ensure_ascii=False)}
 返回 ConversationDecision。publicSummary 是可展示给用户的安全动作摘要。"""
         try:
-            decision = await self.model.with_structured_output(ConversationDecision, method="function_calling").ainvoke(prompt)
+            decision = await self.model.with_structured_output(ConversationDecision, method="function_calling").ainvoke(await multimodal_prompt(prompt, request))
         except Exception:
             return _fallback_decision(state)
         analysis_mode = bool(state.get("analysis_workspace")) or deep_analysis_intent(request)
@@ -510,10 +511,10 @@ class ConversationReActRuntime:
         if action == "build_candidate_pool":
             return "我会直接开始构建候选池：先在线发现相关作品，再以 MusicBrainz 核验歌曲身份；候选池完成后仍由你确认才会开赛。"
         if self.model is None:
-            return _fallback_answer(state)
+            return "图片理解服务尚未配置，请稍后重试。" if request.image_attachments else _fallback_answer(state)
         sources = [{"title": item.get("sourceTitle"), "summary": item.get("summary"), "url": item.get("sourceUrl")} for item in state.get("web_sources", [])[:10]]
         knowledge = state.get("knowledge", [])[:6]
-        prompt = f"""你是 SoundSeek 的音乐探索 Agent。用中文自然、克制地回答，不输出思维链。
+        prompt = f"""你是 SoundSeek 的音乐探索 Agent，也支持通用图像问答。用户只上传图片时先描述可见内容，不要求用户先补充音乐偏好，不为无关图片强行联想音乐。用中文自然、克制地回答，不输出思维链。
 不要虚构歌曲、艺人、歌词、链接或工具结果。外部资料为空时，不得声称已经查询。
 用户问题：{request.user_message}
 会话摘要：{request.summary}
@@ -523,10 +524,12 @@ class ConversationReActRuntime:
 本地补充主题卡：{json.dumps(knowledge, ensure_ascii=False)}
 回答篇幅由用户问题的复杂度、已有证据和本轮研究投入共同决定，不设置统一字数上限。简单事实可以简洁；已经进行多轮检索、核验或精读时，必须把真正影响结论的证据、推理依据和边界充分写入正文，不能把长时间研究压缩成几句泛泛总结。普通对话只回答用户当前问题并给出自然的音乐探索方向；除非用户本轮明确要求世界杯、淘汰赛或两两对决，否则不得主动提及比赛、开赛或候选池。"""
         try:
-            response = await self.model.ainvoke(prompt)
+            response = await self.model.ainvoke(await multimodal_prompt(prompt, request))
             return str(response.content).strip()
+        except ImageInputBudgetError as error:
+            return str(error)
         except Exception:
-            return _fallback_answer(state)
+            return "图片暂时无法读取或理解，请稍后重新发送。" if request.image_attachments else _fallback_answer(state)
 
     async def analyze_music(self, state: ConversationState) -> ConversationAgentResult:
         """Produce an evidence-bounded analysis from the mutable workspace.
@@ -605,7 +608,7 @@ class ConversationReActRuntime:
 - relatedWorks 只给 0–3 个真正有比较价值的“艺人 — 作品”。
 返回 MusicAnalysisDraft。"""
             try:
-                draft = await self._invoke_validated(MusicAnalysisDraft, prompt)
+                draft = await self._invoke_validated(MusicAnalysisDraft, prompt, request)
                 claims = sanitize_claims(draft.claims, allowed_refs)
                 text = draft.answer.strip()
                 core_judgment = draft.core_judgment
@@ -631,7 +634,7 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
 - revised_answer 保留原回答的自然结构、分析维度和信息密度，只修复证据越界；不得借审校之名把长篇分析压成摘要。如果确需删除不受支持的事实，应以证据支持的解释或明确边界替代，而不是删除其余有依据的分析。
 返回 MusicAnalysisReview。"""
                     try:
-                        review = await self._invoke_validated(MusicAnalysisReview, review_prompt)
+                        review = await self._invoke_validated(MusicAnalysisReview, review_prompt, request)
                         revised_text = review.revised_answer.strip()
                         # A semantic review may narrow unsupported facts, but
                         # it must not silently turn a researched analysis into
@@ -648,7 +651,7 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
 - 不设置统一字数上限。
 初稿字符数：{len(text)}；上一版审校字符数：{len(revised_text)}。
 """
-                            review = await self._invoke_validated(MusicAnalysisReview, retry_prompt)
+                            review = await self._invoke_validated(MusicAnalysisReview, retry_prompt, request)
                             revised_text = review.revised_answer.strip()
                         claims, review_meta = apply_claim_reviews(
                             claims, review.items, allowed_refs, source_quality,
@@ -760,7 +763,7 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
 返回字段：summary（80-220字），dimensions（2-4项，每项有 label/summary），directions（2-4条可执行探索方向），personalityEasterEgg（80-120字娱乐性观察），disclaimer。
 """
         try:
-            response = await self.model.ainvoke(prompt)
+            response = await self.model.ainvoke(await multimodal_prompt(prompt, request))
             data = json.loads(str(response.content).strip().removeprefix("```json").removesuffix("```").strip())
             if not isinstance(data.get("summary"), str) or not isinstance(data.get("dimensions"), list):
                 return fallback
@@ -855,7 +858,7 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
                 incoming = sorted(incoming, key=lambda item: int(item.get("sequenceNumber", 0)))
                 applied_sequence = max(int(item.get("sequenceNumber", 0)) for item in incoming)
                 contents = [str(item.get("content") or "").strip() for item in incoming if str(item.get("content") or "").strip()]
-                request = _request_with_interventions(request, contents)
+                request = _request_with_interventions(request, contents, [attachment_id for item in incoming for attachment_id in (item.get("attachmentIds") or [])])
                 revision += 1
                 iteration = 0
                 intervention_history = [{
@@ -1236,7 +1239,7 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
         })
         context = list(original.get("recentMessages") or [])
         context.append({"role": "USER", "content": request.answer})
-        original["recentMessages"] = context[-12:]
+        original["recentMessages"] = context[-1000:]
         resumed = ConversationAgentRequest.model_validate(original)
         result = None
         async for state in self.graph.astream(
@@ -1345,7 +1348,7 @@ reason 要具体映射到结构化偏好中的声音、情绪、文本、场景�
         for attempt in range(2):
             try:
                 repair = "" if attempt == 0 else "\n上一次结果结构无效或过度集中于单一艺人。请缩短 reason，严格满足字段类型与 sourceUrl 原样复制要求，并重新检查用户明确列出的每位艺人及其对应查询来源。"
-                draft = await self._invoke_validated(MusicRecommendationDraft, prompt + repair)
+                draft = await self._invoke_validated(MusicRecommendationDraft, prompt + repair, request)
                 required_coverage = min(5, len(named_artists))
                 single_artist_song_shortfall = len(named_artists) == 1 and sum(
                     1 for item in draft.songs if _artist_key_covered(_music_key(named_artists[0]), {_music_key(item.artist_name)})
@@ -2132,7 +2135,7 @@ def _bounded_text(value: str, limit: int) -> str:
     return value if len(value) <= limit else value[: max(0, limit - 1)].rstrip() + "…"
 
 
-def _request_with_interventions(request: ConversationAgentRequest, contents: list[str]) -> ConversationAgentRequest:
+def _request_with_interventions(request: ConversationAgentRequest, contents: list[str], attachment_ids: list[str] | None = None) -> ConversationAgentRequest:
     active = list(dict.fromkeys([*request.active_interventions, *contents]))[-12:]
     base = request.user_message.split("\n\n[运行中方向调整]", 1)[0].strip()
     effective = _bounded_text(base, 1200)
@@ -2144,7 +2147,8 @@ def _request_with_interventions(request: ConversationAgentRequest, contents: lis
     return request.model_copy(update={
         "user_message": _bounded_text(effective, 2000),
         "active_interventions": active,
-        "recent_messages": recent[-1000:],
+        "image_attachments": list({str(item["id"]):item for item in [*request.image_attachments,*({"id":str(value)} for value in (attachment_ids or []))]}.values()),
+        "recent_messages": (recent + ([{"role": "USER", "content": "运行中补充的图片", "attachmentIds": attachment_ids}] if attachment_ids else []))[-1000:],
     })
 
 
