@@ -33,6 +33,7 @@ services:
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:-indiesoundquest}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-indiesoundquest}
+      KNOWLEDGE_MAINTAINERS: ${KNOWLEDGE_MAINTAINERS:-}
       AGENT_INTERNAL_BASE_URL: http://agent-service:8000
       AGENT_INTERNAL_SERVICE_TOKEN: ${AGENT_INTERNAL_SERVICE_TOKEN}
       GITHUB_OAUTH_CLIENT_ID: ${GITHUB_OAUTH_CLIENT_ID:-}
@@ -89,8 +90,6 @@ services:
     depends_on:
       java-service:
         condition: service_healthy
-      milvus:
-        condition: service_started
     networks:
       - internal
       - public

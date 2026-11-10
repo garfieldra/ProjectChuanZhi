@@ -1,3 +1,4 @@
+from .knowledge import check_result_evidence, begin_evidence_session, finalize_evidence_session
 import json
 import logging
 import os
@@ -108,7 +109,7 @@ _PLAN_ACTIONS = {
     "search_lastfm": ("探索听众关系", "查找相似艺人、相似歌曲与标签线索"),
     "search_domestic_content": ("检索中文内容平台", "补充国内社区中的音乐资料"),
     "search_spotify": ("检索流媒体目录", "补充国际音乐目录线索"),
-    "search_knowledge": ("检索歌曲主题卡", "以本地知识库补充主题与文化语境"),
+    "search_knowledge": ("检索音乐证据", "以本地知识库补充主题与文化语境"),
     "resolve_musicbrainz": ("核验新发现歌曲", "把网络线索解析为规范歌曲身份"),
     "rerank_candidates": ("重排候选歌曲", "按偏好相关性和证据质量生成入选理由"),
     "submit_candidates": ("检查并提交候选池", "确认主池与补位池满足开赛要求"),
@@ -178,6 +179,7 @@ async def compress_memory(request: MemoryCompressionRequest):
 async def conversation(request: ConversationAgentRequest, x_request_id: str = Header()):
     if str(request.request_id) != x_request_id: raise HTTPException(400, "X-Request-Id must match requestId")
     async def events():
+        begin_evidence_session()
         yield _progress(request.request_id, "understand_preference", 0)
         try:
             started = __import__("time").monotonic(); last_action = None; last_plan = None; result = None; state = {}
@@ -193,9 +195,11 @@ async def conversation(request: ConversationAgentRequest, x_request_id: str = He
                         last_plan = plan; yield plan
                 if state.get("result"): result = state["result"]
             if result is None: raise RuntimeError("conversation result missing")
+            await check_result_evidence(result, conversation_runtime.knowledge)
             if not (result.card_intent and result.card_intent.message_type == "CLARIFICATION_CARD"):
                 result.memory_summary = await conversation_runtime.build_memory_summary(request, result)
             logger.info("conversation ReAct completed request_id=%s trace=%s", request.request_id, result.trace_summary)
+            await finalize_evidence_session(result, conversation_runtime.knowledge.retriever)
             yield f"event: result\ndata: {result.model_dump_json(by_alias=True)}\n\n"
         except Exception:
             logger.exception("conversation workflow failed")
@@ -206,14 +210,17 @@ async def conversation(request: ConversationAgentRequest, x_request_id: str = He
 async def conversation_resume(request: ConversationResumeRequest, x_request_id: str = Header()):
     if str(request.request_id) != x_request_id: raise HTTPException(400, "X-Request-Id must match requestId")
     async def events():
+        begin_evidence_session()
         initial_action = "build_candidate_pool" if request.resume_kind == "ARTIST_IDENTITY" else "clarify"
         yield _progress(request.request_id, initial_action, 0)
         try:
             result = await conversation_runtime.resume(request)
+            await check_result_evidence(result, conversation_runtime.knowledge)
             phase = "build_candidate_pool" if request.resume_kind == "ARTIST_IDENTITY" else "resume_conversation"
             message = "正在根据确认结果继续构建候选池" if request.resume_kind == "ARTIST_IDENTITY" else "已收到补充信息，正在继续本轮探索"
             yield f"event: progress\ndata: {json.dumps({'runId': str(request.request_id), 'phase': phase, 'status': 'running', 'message': message, 'elapsedMs': 0}, ensure_ascii=False)}\n\n"
             logger.info("conversation resume completed request_id=%s trace=%s", request.request_id, result.trace_summary)
+            await finalize_evidence_session(result, conversation_runtime.knowledge.retriever)
             yield f"event: result\ndata: {result.model_dump_json(by_alias=True)}\n\n"
         except Exception:
             logger.exception("conversation resume failed")
@@ -224,6 +231,7 @@ async def conversation_resume(request: ConversationResumeRequest, x_request_id: 
 async def candidate_pool(request: CandidatePoolRequest, x_request_id: str = Header()):
     if str(request.request_id) != x_request_id: raise HTTPException(400, "X-Request-Id must match requestId")
     async def events():
+        begin_evidence_session()
         yield _progress(request.request_id, "understand_preference", 0)
         try:
             # A ReAct turn traverses both Supervisor and executor nodes.  The
@@ -251,6 +259,7 @@ async def candidate_pool(request: CandidatePoolRequest, x_request_id: str = Head
                 result.trace_summary,
                 [{key: value for key, value in item.items() if key != "error"} for item in state.get("observations", [])],
             )
+            await finalize_evidence_session(result, conversation_runtime.knowledge.retriever)
             yield f"event: result\ndata: {result.model_dump_json(by_alias=True)}\n\n"
         except Exception:
             logger.exception("candidate pool workflow failed", extra={"request_id": str(request.request_id)})
@@ -264,6 +273,7 @@ async def tournament_report(request: TournamentReportRequest, x_request_id: str 
         raise HTTPException(400, "X-Request-Id must match requestId")
 
     async def events():
+        begin_evidence_session()
         yield _progress(request.request_id, "analyze_tournament", 0)
         try:
             started = __import__("time").monotonic(); last_action = None; last_plan = None; result = None; state = {}
@@ -285,8 +295,31 @@ async def tournament_report(request: TournamentReportRequest, x_request_id: str 
                 yield f"event: error\ndata: {json.dumps({'requestId': str(request.request_id), 'code': state['error_code'], 'message': '报告审查未通过，请稍后重试'}, ensure_ascii=False)}\n\n"
                 return
             if result is None: raise RuntimeError("report result missing")
+            await finalize_evidence_session(result, conversation_runtime.knowledge.retriever)
             yield f"event: result\ndata: {result.model_dump_json(by_alias=True)}\n\n"
         except Exception:
             logger.exception("tournament report workflow failed", extra={"request_id": str(request.request_id)})
             yield f"event: error\ndata: {json.dumps({'requestId': str(request.request_id), 'code': 'REPORT_WORKFLOW_FAILED', 'message': '暂时无法生成报告，请稍后重试'}, ensure_ascii=False)}\n\n"
     return StreamingResponse(events(), media_type="text/event-stream")
+
+
+@app.post("/internal/knowledge/search", dependencies=[Depends(verify_caller)])
+async def knowledge_search(request: dict):
+    return await conversation_runtime.knowledge.search(request)
+
+
+@app.post("/internal/knowledge/extract", dependencies=[Depends(verify_caller)])
+async def knowledge_extract(request: dict):
+    from .knowledge_extraction import extract_candidates
+    try:
+        return await extract_candidates(conversation_runtime, str(request.get("text") or ""))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.post("/internal/knowledge/read-source", dependencies=[Depends(verify_caller)])
+async def knowledge_read_source(request: dict):
+    sources = await web_search.enrich_public_sources([{"sourceUrl": str(request.get("url") or ""), "sourceTitle": "维护者指定资料"}], limit=1)
+    if not sources:
+        raise HTTPException(422, "SOURCE_NOT_READABLE")
+    return {"status": "candidate", "source": sources[0]}

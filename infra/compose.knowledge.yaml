@@ -1,0 +1,55 @@
+# Optional music evidence store. Uses its own volume; never reuses legacy MinIO-backed data.
+services:
+  java-service:
+    environment:
+      KNOWLEDGE_MAINTAINERS: ${KNOWLEDGE_MAINTAINERS:-}
+  agent-service:
+    environment:
+      KNOWLEDGE_MIN_SIMILARITY: ${KNOWLEDGE_MIN_SIMILARITY:-0.5}
+      MILVUS_URI: http://knowledge-milvus:19530
+  agent-worker:
+    environment:
+      KNOWLEDGE_MIN_SIMILARITY: ${KNOWLEDGE_MIN_SIMILARITY:-0.5}
+      MILVUS_URI: http://knowledge-milvus:19530
+  knowledge-milvus:
+    profiles: [knowledge]
+    image: milvusdb/milvus:v2.4.23
+    command: [milvus, run, standalone]
+    environment:
+      ETCD_USE_EMBED: 'true'
+      ETCD_DATA_DIR: /var/lib/milvus/etcd
+      ETCD_CONFIG_PATH: /milvus/configs/embedEtcd.yaml
+      COMMON_STORAGETYPE: local
+    volumes:
+      - knowledge-milvus-data:/var/lib/milvus
+      - ./knowledge/embedEtcd.yaml:/milvus/configs/embedEtcd.yaml:ro
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost:9091/healthz]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 12
+    networks: [internal]
+  knowledge-worker:
+    restart: unless-stopped
+    profiles: [knowledge]
+    build:
+      context: ../agent-service
+    command: [python, -m, app.knowledge_worker]
+    environment:
+      JAVA_INTERNAL_BASE_URL: ${KNOWLEDGE_JAVA_BASE_URL:-http://java-service:8080}
+      AGENT_INTERNAL_SERVICE_TOKEN: ${AGENT_INTERNAL_SERVICE_TOKEN}
+      MILVUS_URI: http://knowledge-milvus:19530
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-indiesoundquest}:${RABBITMQ_DEFAULT_PASS:-indiesoundquest}@rabbitmq/
+      HF_HOME: /cache/huggingface
+      FASTEMBED_CACHE_PATH: /cache/fastembed
+    depends_on:
+      knowledge-milvus:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - agent-model-cache:/cache
+    networks: [internal, public]
+volumes:
+  knowledge-milvus-data:

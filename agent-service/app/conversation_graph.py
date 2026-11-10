@@ -16,6 +16,7 @@ from .schemas import CandidatePoolRequest, CandidatePoolResult, ConfirmedArtist,
 from .settings import settings
 from .tools import KnowledgeSearchTool, LastFmResearchTool, MusicCatalogTool, WebSearchTool, WikimediaResearchTool
 from .registry import SkillRegistry, ToolRegistry, skill_registry, tool_registry
+from .knowledge import evidence_source, stable_sources
 from .music_analysis import (
     EvidenceClaim,
     MusicAnalysisPlan,
@@ -72,6 +73,7 @@ class ConversationState(TypedDict, total=False):
     observations: list[dict]
     web_sources: list[dict]
     knowledge: list[dict]
+    evidence_registry: dict[str, str]
     iteration: int
     preference_profile: dict
     entity_resolutions: list[dict]
@@ -288,6 +290,8 @@ class ConversationReActRuntime:
 
     async def decide(self, state: ConversationState) -> ConversationDecision:
         request = state["request"]
+        state["web_sources"] = stable_sources(list(state.get("web_sources", [])), state.setdefault("evidence_registry", {}))
+        has_analysis_evidence = bool(state.get("web_sources") or any(e.get("knowledgeType") != "THEME_CARD" for e in state.get("knowledge", [])))
         forced = getattr(request, "forced_action", None)
         if forced in {"build_candidate_pool", "generate_exploration_report", "propose_tournament", "clarify", "respond"}:
             summaries = {
@@ -301,7 +305,7 @@ class ConversationReActRuntime:
         ambiguities = state.get("entity_ambiguities", [])
         if ambiguities and not any(item["action"] == "clarify" for item in state.get("action_history", [])):
             return _entity_clarification_decision(ambiguities)
-        if state.get("analysis_workspace") and state.get("web_sources") and _analysis_stagnated(state):
+        if state.get("analysis_workspace") and has_analysis_evidence and _analysis_stagnated(state):
             return ConversationDecision(
                 action="analyze_music",
                 public_summary="后续研究未增加有效证据，依据现有资料完成分析并说明边界",
@@ -319,7 +323,7 @@ class ConversationReActRuntime:
             "analysisWorkspace": state.get("analysis_workspace", {}),
             "analysisEvidenceCoverage": state.get("evidence_coverage", {}),
             "analysisSources": [{
-                "ref": f"S{index}", "title": item.get("sourceTitle"), "url": item.get("sourceUrl"),
+                "ref": item.get("ref", f"S{index}"), "title": item.get("sourceTitle"), "url": item.get("sourceUrl"),
                 "summary": str(item.get("summary") or "")[:500],
                 "hasFullTextExcerpt": bool(item.get("pageExcerpt")),
             } for index, item in enumerate(state.get("web_sources", [])[:16], start=1)],
@@ -338,7 +342,7 @@ class ConversationReActRuntime:
 - research_musicbrainz：需要核对作品/录音版本、ISRC、发行、创作署名、合作人员或规范实体关系时使用。entity_type 选择 artist、recording、release-group 或 work；已知 MBID 时填写 entity_mbid，否则必须尽量把 artist_name 与 track_title 分开填写，query 只作为补充；它提供目录事实，不替代乐评与采访；
 - search_wikimedia：需要艺人身份、别名、乐队成员、地区、年代、作品时间线或音乐史背景时使用。它是百科语境来源，不能单独证明主观音乐评价；
 - search_lastfm：需要相似艺人、相似歌曲、热门曲目或听众标签时使用。填写 artist_name，歌曲模式同时填写 track_title；Last.fm 只是听众关系与发现信号，具体歌曲仍需 MusicBrainz 核验。toolAvailability.lastfm=false 时禁止选择；
-- search_knowledge：本地主题卡可以补充歌词主题或文化语境，但它不是歌曲发现主来源；
+- search_knowledge：本地已审核事实可支持背景分析，主题卡仅作解释；它不是歌曲发现主来源；
 - recommend_music：已有足够公开资料时，提取具体歌曲/艺人推荐，并通过 MusicBrainz 核验可核验的歌曲；这是普通探索 Tool，与世界杯无关；
 - analyze_music：当前问题需要解释、拆解、比较或论证，且已有资料足以在明确边界内形成深入回答。深度音乐分析是按需加载的 Skill，不是固定工作流；你应根据 analysisWorkspace 和 analysisEvidenceCoverage 自主决定搜索、精读、补充本地资料或停止。创作背景、采访、制作署名等事实型问题若仍有 blockingGaps，应优先补足最可能改变结论的缺口；
 - 研究效率：当已有来源能够回答核心问题时尽早选择 analyze_music；新增搜索必须针对会改变结论的具体缺口，不为凑来源数量而检索。描述性听感问题可以说明证据边界后作答；只有创作/制作等事实密集问题才需要额外精读和独立来源核对。连续无新增证据时停止研究，不重复同类查询；
@@ -406,7 +410,7 @@ class ConversationReActRuntime:
                 return ConversationDecision(action="recommend_music", public_summary="依据现有公开资料整理具体推荐")
             return ConversationDecision(action="respond", public_summary="当前研究源已无新增证据，整理已有结果")
         read_refs = set(state.get("read_source_refs", []))
-        source_refs = {f"S{index}" for index, _ in enumerate(state.get("web_sources", [])[:16], start=1)}
+        source_refs = {item.get("ref", f"S{index}") for index, item in enumerate(state.get("web_sources", [])[:16], start=1)}
         unread_refs = sorted(source_refs - read_refs, key=lambda value: int(value[1:]))
         if analysis_mode and decision.action == "read_source" and not state.get("web_sources"):
             return ConversationDecision(
@@ -441,7 +445,7 @@ class ConversationReActRuntime:
                     )
                 return ConversationDecision(action="recommend_music", public_summary="提取并核验具体歌曲与艺人推荐")
             return ConversationDecision(action="respond", public_summary="结合当前对话继续音乐探索")
-        if decision.action == "analyze_music" and not state.get("web_sources") and state.get("search_attempts", 0) < analysis_search_limit:
+        if decision.action == "analyze_music" and not has_analysis_evidence and state.get("search_attempts", 0) < analysis_search_limit:
             return ConversationDecision(action="search_web", public_summary="先查找能够支持核心分析的公开资料", query=_next_analysis_query(state, request))
         if (
             decision.action == "analyze_music" and analysis_mode and coverage.get("blocking_gaps")
@@ -511,7 +515,10 @@ class ConversationReActRuntime:
             return "我会直接开始构建候选池：先在线发现相关作品，再以 MusicBrainz 核验歌曲身份；候选池完成后仍由你确认才会开赛。"
         if self.model is None:
             return _fallback_answer(state)
-        sources = [{"title": item.get("sourceTitle"), "summary": item.get("summary"), "url": item.get("sourceUrl")} for item in state.get("web_sources", [])[:10]]
+        if state.get("knowledge") and hasattr(self.knowledge, "retriever"):
+            state["knowledge"] = await self.knowledge.retriever.revalidate(state["knowledge"])
+        combined = list(state.get("web_sources", [])) + [evidence_source(e) for e in state.get("knowledge", []) if e.get("support")]
+        sources = stable_sources(combined, state.setdefault("evidence_registry", {}))[:16]
         knowledge = state.get("knowledge", [])[:6]
         prompt = f"""你是 IndieSoundQuest 的音乐探索 Agent。用中文自然、克制地回答，不输出思维链。
 不要虚构歌曲、艺人、歌词、链接或工具结果。外部资料为空时，不得声称已经查询。
@@ -520,7 +527,7 @@ class ConversationReActRuntime:
 最近对话：{request.recent_messages}
 近期推荐反馈：{request.recent_feedback}
 公开资料：{json.dumps(sources, ensure_ascii=False)}
-本地补充主题卡：{json.dumps(knowledge, ensure_ascii=False)}
+本地审核材料（保留来源、知识类型、归因和边界，引用使用 ref）：{json.dumps(knowledge, ensure_ascii=False)}
 回答篇幅由用户问题的复杂度、已有证据和本轮研究投入共同决定，不设置统一字数上限。简单事实可以简洁；已经进行多轮检索、核验或精读时，必须把真正影响结论的证据、推理依据和边界充分写入正文，不能把长时间研究压缩成几句泛泛总结。普通对话只回答用户当前问题并给出自然的音乐探索方向；除非用户本轮明确要求世界杯、淘汰赛或两两对决，否则不得主动提及比赛、开赛或候选池。"""
         try:
             response = await self.model.ainvoke(prompt)
@@ -540,26 +547,33 @@ class ConversationReActRuntime:
             state.get("analysis_workspace") or initial_analysis_workspace(request).model_dump()
         )
         all_sources = list(state.get("web_sources", []))
+        knowledge_evidence = list(state.get("knowledge", []))
+        if hasattr(self.knowledge, "retriever"):
+            knowledge_evidence = await self.knowledge.retriever.revalidate(knowledge_evidence)
+        all_sources += [evidence_source(item) for item in knowledge_evidence if item.get("support")]
+        registry = state.setdefault("evidence_registry", {})
+        all_sources = stable_sources(all_sources, registry)
         # Keep a bounded part of the prior turn's evidence visible to the
         # current analysis even when several new searches prepend many hits.
         # This preserves conversational continuity without preventing the
         # Agent from replacing weak evidence with stronger current sources.
         inherited_sources = [item for item in all_sources if item.get("inheritedFromAnalysisCard")]
         current_sources = [item for item in all_sources if not item.get("inheritedFromAnalysisCard")]
-        raw_sources = [*inherited_sources[:4], *current_sources][:16]
+        raw_sources = [*inherited_sources[:4], *[s for s in current_sources if s.get("entryId")][:6], *[s for s in current_sources if not s.get("entryId")]][:16]
         sources = [{
-            "ref": f"S{index}",
+            "ref": item["ref"],
             "title": str(item.get("sourceTitle") or "公开音乐资料")[:180],
             "url": str(item.get("sourceUrl") or ""),
             "summary": str(item.get("summary") or "")[:1000],
             "excerpt": str(item.get("pageExcerpt") or "")[:2000],
             "provider": str(item.get("searchProvider") or "web")[:40],
             "quality": classify_source_quality(item),
-        } for index, item in enumerate(raw_sources, start=1) if item.get("sourceUrl")]
+            **{key: item[key] for key in ("entryId", "revision", "origin", "knowledgeType", "boundary", "attribution", "applicability", "support", "evidenceKey", "evidenceUrl") if key in item},
+        } for index, item in enumerate(raw_sources, start=1) if item.get("sourceUrl") or item.get("entryId")]
         allowed_refs = {item["ref"] for item in sources}
         source_quality = {item["ref"]: item["quality"] for item in sources}
         knowledge = list(state.get("knowledge", []))[:6]
-        evidence_coverage = state.get("evidence_coverage") or assess_analysis_evidence(workspace, raw_sources).model_dump()
+        evidence_coverage = assess_analysis_evidence(workspace, raw_sources).model_dump()
         review_meta: dict = {"semanticReviewApplied": False, "reviewedClaimCount": 0, "verdictCounts": {}}
         source_conflicts: list[str] = []
         fallback_claim = EvidenceClaim(
@@ -591,7 +605,7 @@ class ConversationReActRuntime:
 动态分析工作台：{workspace.model_dump_json()}
 证据覆盖评估：{json.dumps(evidence_coverage, ensure_ascii=False)}
 公开资料（引用只能使用 S1、S2 等 ref）：{json.dumps(sources, ensure_ascii=False)}
-本地主题卡（仅作补充，不得凌驾于在线资料）：{json.dumps(knowledge, ensure_ascii=False)}
+本地已审核材料（事实按支持范围使用，主题卡只能支持解释）：{json.dumps(knowledge, ensure_ascii=False)}
 
 要求：
 - answer 直接回答问题，篇幅由问题复杂度、所选分析维度、证据质量与用户要求动态决定，不设置统一字数上限；
@@ -607,6 +621,13 @@ class ConversationReActRuntime:
             try:
                 draft = await self._invoke_validated(MusicAnalysisDraft, prompt)
                 claims = sanitize_claims(draft.claims, allowed_refs)
+                theme_refs = {s["ref"] for s in sources if s.get("knowledgeType") == "THEME_CARD"}
+                for claim in claims:
+                    if claim.claim_type == "FACT":
+                        claim.evidence_refs = [ref for ref in claim.evidence_refs if ref not in theme_refs]
+                        if not claim.evidence_refs:
+                            claim.status = "unsupported"
+                            claim.confidence = "low"
                 text = draft.answer.strip()
                 core_judgment = draft.core_judgment
                 uncertainties = draft.uncertainties
@@ -685,6 +706,7 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
             "ref": item["ref"], "title": item["title"], "url": item["url"],
             "summary": (item["summary"] or item["excerpt"])[:240], "provider": item["provider"],
             "quality": item["quality"],
+            **{key: item[key] for key in ("entryId", "revision", "origin", "knowledgeType", "boundary", "attribution", "applicability", "support", "evidenceKey", "evidenceUrl") if key in item},
         } for item in sources]
         payload = {
             "title": f"关于{workspace.subject[:80]}的深入分析",
@@ -814,6 +836,11 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
             initial_coverage: dict = {}
             if analysis_workspace is not None:
                 initial_sources = inherited_analysis_sources(request)
+                inherited_knowledge = [s for s in initial_sources if s.get("entryId")]
+                if inherited_knowledge and hasattr(self.knowledge, "retriever"):
+                    verified = await self.knowledge.retriever.revalidate(inherited_knowledge)
+                    previous_refs = {(s["entryId"], s["revision"]): s.get("ref") for s in inherited_knowledge}
+                    initial_sources = [s for s in initial_sources if not s.get("entryId")] + [{**evidence_source(s), "ref": previous_refs.get((s["entryId"], s["revision"])), "inheritedFromAnalysisCard": True} for s in verified]
                 coverage = assess_analysis_evidence(analysis_workspace, initial_sources)
                 analysis_workspace = workspace_with_coverage(analysis_workspace, coverage)
                 initial_coverage = coverage.model_dump(by_alias=True)
@@ -827,7 +854,7 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
                 })
             return {
                 "action_history": history,
-                "observations": [], "web_sources": initial_sources, "knowledge": [], "iteration": 0,
+                "observations": [], "web_sources": initial_sources, "knowledge": [], "evidence_registry": {}, "iteration": 0,
                 "preference_profile": profile.model_dump(by_alias=True),
                 "entity_resolutions": resolutions, "entity_ambiguities": ambiguities,
                 "research_assessment": {}, "search_attempts": 0, "analysis_queries": [],
@@ -926,7 +953,7 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
                 })
                 research = _assess_research(request, state.get("preference_profile", {}), sources)
                 updates = {
-                    "web_sources": sources,
+                    "web_sources": stable_sources(sources, state.setdefault("evidence_registry", {})),
                     "research_assessment": research,
                     "search_attempts": state.get("search_attempts", 0) + 1,
                     "observations": state["observations"] + [{
@@ -950,15 +977,15 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
                     updates["evidence_coverage"] = coverage.model_dump(by_alias=True)
                 return updates
             if action == "read_source":
-                sources = list(state.get("web_sources", []))
+                sources = stable_sources(list(state.get("web_sources", [])), state.setdefault("evidence_registry", {}))
                 requested_ref = (state["decision"].source_ref or "").upper()
                 read_refs = list(state.get("read_source_refs", []))
-                available = [f"S{index}" for index in range(1, min(16, len(sources)) + 1)]
+                available = [item["ref"] for item in sources[:16]]
                 unread = [ref for ref in available if ref not in read_refs]
                 source_ref = requested_ref if requested_ref in unread else (unread[0] if unread else "")
                 enriched: list[dict] = []
                 if source_ref and hasattr(self.web, "enrich_public_sources"):
-                    enriched = await self.web.enrich_public_sources([sources[int(source_ref[1:]) - 1]], limit=1)
+                    enriched = await self.web.enrich_public_sources([next(item for item in sources if item["ref"] == source_ref)], limit=1)
                 if source_ref:
                     read_refs.append(source_ref)
                 if enriched:
@@ -972,7 +999,7 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
                 )
                 workspace = workspace_with_coverage(workspace, coverage)
                 return {
-                    "web_sources": sources, "read_source_refs": read_refs,
+                    "web_sources": stable_sources(sources, state.setdefault("evidence_registry", {})), "read_source_refs": read_refs,
                     "evidence_coverage": coverage.model_dump(by_alias=True),
                     "analysis_workspace": workspace.model_dump(),
                     "observations": state["observations"] + [{
@@ -1010,7 +1037,7 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
                     if str(item.get("sourceUrl") or "") not in previous_urls
                 )
                 updates = {
-                    "web_sources": sources,
+                    "web_sources": stable_sources(sources, state.setdefault("evidence_registry", {})),
                     "observations": state["observations"] + [{
                         "action": action, "status": "success" if found else "unavailable",
                         "outputCount": len(found), "newOutputCount": new_count, "entityType": decision.entity_type,
@@ -1032,7 +1059,7 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
                 sources = _merge_web_sources(state.get("web_sources", []), found)
                 new_count = sum(1 for item in found if str(item.get("sourceUrl") or "") not in previous_urls)
                 updates = {
-                    "web_sources": sources,
+                    "web_sources": stable_sources(sources, state.setdefault("evidence_registry", {})),
                     "observations": state["observations"] + [{
                         "action": action, "status": "success" if found else "unavailable",
                         "outputCount": len(found), "newOutputCount": new_count,
@@ -1064,24 +1091,32 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
                 sources = _merge_web_sources(state.get("web_sources", []), found)
                 new_count = sum(1 for item in found if str(item.get("sourceUrl") or "") not in previous_urls)
                 return {
-                    "web_sources": sources,
+                    "web_sources": stable_sources(sources, state.setdefault("evidence_registry", {})),
                     "observations": state["observations"] + [{
                         "action": action, "status": "success" if found else "unavailable",
                         "outputCount": len(found), "newOutputCount": new_count, "mode": decision.lastfm_mode,
                     }],
                 }
             if action == "search_knowledge":
-                cards = await self.knowledge.search_verified(state["decision"].query or request.user_message, [])
+                query = state["decision"].query or request.user_message
+                entities = [{"type": "ARTIST", "id": str(item.get("mbid"))} for item in state.get("entity_resolutions", []) if item.get("mbid") and item.get("status") == "RESOLVED"]
+                if hasattr(self.knowledge, "search"):
+                    retrieved = await self.knowledge.search({"query": query, "entities": entities, "entityScope": "RELATED_CONTEXT"})
+                    cards = retrieved.get("evidence", [])
+                    knowledge_status = retrieved.get("status", "unavailable")
+                else:
+                    cards = await self.knowledge.search_verified(query, [])
+                    knowledge_status = "hit" if cards else "no_match"
                 updates = {
                     "knowledge": cards,
-                    "observations": state["observations"] + [{"action": action, "status": "success", "outputCount": len(cards)}],
+                    "observations": state["observations"] + [{"action": action, "status": "success" if knowledge_status == "hit" else knowledge_status, "outputCount": len(cards)}],
                 }
                 if state.get("analysis_workspace"):
                     workspace = workspace_after_research(
                         state["analysis_workspace"], len(state.get("web_sources", [])),
-                        f"本地主题卡补充了 {len(cards)} 条解释线索；它们只作为在线资料的补充。",
+                        f"已取得 {len(cards)} 条本地审核材料；事实、归因观点和主题解释按各自边界使用。",
                     )
-                    coverage = assess_analysis_evidence(workspace, state.get("web_sources", []))
+                    coverage = assess_analysis_evidence(workspace, list(state.get("web_sources", [])) + [evidence_source(item) for item in cards if item.get("support")])
                     workspace = workspace_with_coverage(workspace, coverage)
                     updates["analysis_workspace"] = workspace.model_dump()
                     updates["evidence_coverage"] = coverage.model_dump(by_alias=True)
@@ -1155,8 +1190,9 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
                         "allowFreeText": True,
                     },
                 )
-            elif action == "respond" and state.get("web_sources"):
-                card = _public_source_card(state["web_sources"])
+            elif action == "respond" and (state.get("web_sources") or state.get("knowledge")):
+                combined = list(state.get("web_sources", [])) + [evidence_source(e) for e in state.get("knowledge", []) if e.get("support")]
+                card = _public_source_card(stable_sources(combined, state.setdefault("evidence_registry", {})))
             return {
                 "result": ConversationAgentResult(
                     text=text,
@@ -2067,7 +2103,7 @@ def _public_source_card(sources: list[dict]) -> ConversationCardIntent | None:
     return ConversationCardIntent(
         message_type="RECOMMENDATION_CARD",
         card_type="PUBLIC_MUSIC_SOURCES",
-        payload={"title": "沿着这些公开资料继续探索", "items": items},
+        payload={"title": "沿着这些公开资料继续探索", "items": items, "sources": items},
     )
 
 
@@ -2076,15 +2112,17 @@ def _public_source_items(sources: list[dict], limit: int = 6) -> list[dict]:
     seen: set[str] = set()
     for source in sources:
         url = str(source.get("sourceUrl") or "").strip()
-        if not re.match(r"^https?://", url, re.I) or url in seen:
+        key = str(source.get("evidenceKey") or url)
+        if (not source.get("entryId") and not re.match(r"^https?://", url, re.I)) or key in seen:
             continue
-        seen.add(url)
+        seen.add(key)
         summary = re.sub(r"\s+", " ", str(source.get("summary") or "").replace("|", " ")).strip()
         items.append({
             "title": str(source.get("sourceTitle") or "公开音乐资料").strip()[:180],
             "url": url,
             "summary": summary[:240],
             "provider": str(source.get("searchProvider") or "web").strip()[:40],
+            **{k: source[k] for k in ("ref", "entryId", "revision", "knowledgeType", "support", "boundary") if k in source},
         })
         if len(items) >= limit:
             break

@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class PreferenceReportApplicationService {
+  @org.springframework.beans.factory.annotation.Autowired private com.indiesoundquest.knowledge.KnowledgeService knowledge;
   private final TournamentPreferenceReportRepository reports;
   private final AsyncOutboxEventRepository outbox;
   private final AgentRunApplicationService agentRuns;
@@ -103,6 +104,7 @@ public class PreferenceReportApplicationService {
   private void validateReport(TournamentPreferenceReport report, String reportJson) {
     try {
       var value = objectMapper.readTree(reportJson);
+      if(knowledge!=null)knowledge.assertCardReferences(objectMapper.convertValue(value,new com.fasterxml.jackson.core.type.TypeReference<java.util.Map<String,Object>>(){}));
       if (!"1.0".equals(value.path("schemaVersion").asText())) throw new IllegalArgumentException("REPORT_SCHEMA_VERSION_INVALID");
       if (!report.getTournamentId().toString().equals(value.path("tournamentId").asText())) throw new IllegalArgumentException("REPORT_TOURNAMENT_MISMATCH");
       if (value.path("summary").asText().isBlank()) throw new IllegalArgumentException("REPORT_SUMMARY_MISSING");

@@ -1,3 +1,4 @@
+from .knowledge import begin_evidence_session, finalize_evidence_session
 import asyncio
 import json
 import os
@@ -28,7 +29,7 @@ _PUBLIC_TOOLS = {
     "search_lastfm": ("Last.fm 相似关系发现", "tool"),
     "search_domestic_content": ("中文内容检索", "tool"),
     "search_spotify": ("流媒体目录检索", "tool"),
-    "search_knowledge": ("Milvus 主题知识库", "tool"),
+    "search_knowledge": ("音乐证据库", "tool"),
     "resolve_musicbrainz": ("MusicBrainz 身份核验", "tool"),
     "rerank_candidates": ("候选语义重排", "subagent"),
     "analyze_tournament": ("赛事偏好分析", "subagent"),
@@ -85,6 +86,7 @@ async def stream_public_response(client, run_id: str, lease: str, text: str) -> 
         await asyncio.sleep(0.025)
 
 async def execute(message: aio_pika.IncomingMessage):
+    begin_evidence_session()
     lease = None
     attempt_no = 0
     try:
@@ -186,9 +188,12 @@ async def execute(message: aio_pika.IncomingMessage):
                 if result is None: raise RuntimeError(f"{run_type.lower()} result missing")
                 # Agent results contain UUID values. Use Pydantic's JSON mode
                 # so every worker callback receives wire-safe data.
+                await finalize_evidence_session(result, conversation_runtime.knowledge.retriever)
                 dumped=result.model_dump(by_alias=True, mode="json")
                 if run_type in {"CONVERSATION", "EXPLORATION_REPORT"}:
                     card=dumped.get("cardIntent")
+                    if card:
+                        await callback(client, run_id, "validate-evidence", lease, card["payload"])
                     await stream_public_response(client, run_id, lease, dumped["text"])
                     if card and card.get("messageType") == "CLARIFICATION_CARD":
                         resume_kind = "ARTIST_IDENTITY" if card.get("cardType") == "ARTIST_IDENTITY" else "GENERAL_CLARIFICATION"
@@ -210,13 +215,13 @@ async def execute(message: aio_pika.IncomingMessage):
                 await message.ack()
             except Exception as exc:
                 if attempt_no < 3:
-                    await callback(client,run_id,"retry",lease,{"code":"AGENT_WORKER_RETRY","message":str(exc)[:300]})
+                    await callback(client,run_id,"retry",lease,{"code":"AGENT_WORKER_RETRY","message":"这次探索暂时无法完成，请稍后重试。"})
                     await message.nack(requeue=True)
                 else:
                     if task.get("runType") == "TOURNAMENT_REPORT" and task.get("input",{}).get("reportId"):
-                        await callback(client,run_id,"fail-report",lease,{"reportId":task["input"]["reportId"],"code":"AGENT_WORKER_FAILED","message":str(exc)[:300]})
+                        await callback(client,run_id,"fail-report",lease,{"reportId":task["input"]["reportId"],"code":"AGENT_WORKER_FAILED","message":"这次探索暂时无法完成，请稍后重试。"})
                     else:
-                        await callback(client,run_id,"fail",lease,{"code":"AGENT_WORKER_FAILED","message":str(exc)[:300]})
+                        await callback(client,run_id,"fail",lease,{"code":"AGENT_WORKER_FAILED","message":"这次探索暂时无法完成，请稍后重试。"})
                     await message.reject(requeue=False)
             finally:
                 stop.set()

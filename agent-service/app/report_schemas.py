@@ -84,6 +84,7 @@ class ChoiceTrajectoryItem(ReportApiModel):
 
 
 class PreferenceReport(ReportApiModel):
+    knowledge_sources: list[dict] = Field(default_factory=list, max_length=60)
     schema_version: Literal["1.0"]
     tournament_id: UUID
     tournament_version: int

@@ -145,6 +145,7 @@ class CandidateItem(ApiModel):
 
 
 class CandidatePoolResult(ApiModel):
+    knowledge_sources: list[dict] = Field(default_factory=list, max_length=60)
     request_id: UUID
     status: Literal["needs_clarification", "ready_for_confirmation", "insufficient_candidates", "model_unavailable"]
     size: Literal[16, 32]
