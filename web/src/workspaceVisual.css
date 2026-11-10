@@ -1,0 +1,101 @@
+/* Scoped to the workspace: lazy loading must never restyle the landing hero. */
+.conversation-shell { font-family: var(--ss-font-ui); grid-template-columns: 240px minmax(0, 1fr) 280px; }
+.conversation-sidebar { padding: 20px 12px 84px; gap: 8px; }
+.conversation-brand { height: 56px; margin-bottom: 12px; }
+.conversation-brand strong { font: 600 23px/1.3 var(--ss-font-editorial); color: var(--accent); }
+.conversation-brand small { font-size: 12px; color: var(--muted); text-transform: none; letter-spacing: .01em; }
+.new-conversation { min-height: 44px; color: var(--accent); background: var(--accent-soft); border-radius: var(--ss-radius-control); font-size: 14px; }
+.new-conversation:hover { background: #ead8d0; }
+.conversation-list-tools { margin-top: 8px; }
+.conversation-list-tools input { background: transparent; border-color: var(--line-strong); font-size: 13px; min-height: 38px; }
+.conversation-list-tools button { font-size: 12px; color: var(--muted); }
+.conversation-label { margin-top: 24px; font-size: 12px; color: var(--muted); }
+.conversation-nav-item.active { background: var(--accent-soft); }
+.conversation-nav-item.active .conversation-nav-open { color: #833c31; }
+.conversation-nav-item.active .conversation-nav-icon { background: var(--accent); border-color: var(--accent); }
+.conversation-nav-open { min-height: 62px; padding-block: 12px; }
+.conversation-sidebar nav strong { font-size: 14px; line-height: 1.5; font-weight: 500; }
+.conversation-sidebar nav small { color: var(--muted); font-size: 12px; }
+.conversation-header { min-height: 80px; padding-inline: 32px; background: var(--canvas); backdrop-filter: none; }
+.conversation-header .eyebrow { font-size: 12px; color: var(--muted); letter-spacing: .02em; }
+.conversation-header h1 { font-size: 17px; line-height: 1.5; font-weight: 600; }
+.report-action { font-size: 13px; min-height: 40px; border-color: var(--line); border-radius: 999px; }
+.conversation-timeline { scrollbar-gutter: stable both-edges; padding: 32px clamp(20px, 3vw, 48px); gap: 32px; }
+.conversation-timeline > *, .conversation-composer .composer-frame { width: min(800px, 100%); }
+.conversation-message { font-size: 16px; line-height: 1.85; }
+.message-body { gap: 16px; overflow-wrap: anywhere; }
+.message-body h3 { font: 600 18px/1.6 var(--ss-font-ui); margin: 12px 0 0; }
+.conversation-message.user { background: #eeeae3; border-color: transparent; padding: 12px 18px; }
+.message-agent-mark { background: var(--accent); border-radius: 50%; top: 4px; }
+.conversation-composer { padding: 16px clamp(20px, 3vw, 48px) 20px; background: var(--canvas); }
+.conversation-composer .composer-frame { padding: 16px 16px 12px 20px; border-color: var(--line-strong); box-shadow: none; }
+.conversation-composer .composer-frame:focus-within { border-color: var(--accent); }
+.conversation-composer textarea { font: 400 16px/1.75 var(--ss-font-ui); }
+.conversation-composer textarea::placeholder { color: var(--muted); }
+.composer-toolbar .composer-send { width: 40px; height: 40px; background: var(--accent); transition: background var(--ss-motion-fast), transform var(--ss-motion-fast); }
+.composer-toolbar .composer-send:hover:not(:disabled) { background: #8f4033; }
+.composer-toolbar .composer-send:active:not(:disabled) { transform: scale(.95); }
+.composer-key-hint, .conversation-composer > small { font-size: 12px; color: var(--muted); }
+.conversation-agent-panel { padding: 24px 20px; background: var(--panel); }
+.agent-plan-panel > header .eyebrow, .agent-plan-panel > header > span, .agent-plan-panel > p,
+.agent-plan-panel > footer small, .agent-plan-panel > footer span, .agent-plan-empty p { font-size: 12px; color: var(--muted); }
+.agent-plan-panel > ol strong { font-size: 14px; line-height: 1.5; }
+.agent-plan-panel > ol small { font-size: 12px; color: var(--muted); }
+.conversation-shell .tournament-launch-card { max-width: none; border-color: var(--line); border-radius: var(--ss-radius-panel); padding: 24px; background: var(--surface); box-shadow: none; }
+.conversation-shell .tournament-launch-card h2 { font: 600 24px/1.5 var(--ss-font-editorial); letter-spacing: -.02em; color: var(--ink); }
+.conversation-shell .tournament-launch-card > p:not(.eyebrow) { font-size: 15px; line-height: 1.85; color: var(--muted); }
+.conversation-shell .tournament-launch-card .eyebrow { font: 500 12px/1.6 var(--ss-font-ui); letter-spacing: .02em; }
+.conversation-shell .music-recommendation-list { margin: 12px 0 0; grid-template-columns: minmax(0, 1fr); gap: 0; }
+.conversation-shell .music-recommendation-list > li { padding: 16px 12px; border: 0; background: transparent; border-bottom: 1px solid var(--line); border-radius: var(--ss-radius-control); transition: background var(--ss-motion-fast); }
+.conversation-shell .music-recommendation-list > li.is-active { background: var(--accent-soft); }
+.conversation-shell .music-recommendation-main { grid-template-columns: 64px minmax(0, 1fr); gap: 16px; }
+.conversation-shell .music-recommendation-main strong { font: 600 19px/1.5 var(--ss-font-editorial); overflow-wrap: anywhere; white-space: normal; }
+.conversation-shell .music-recommendation-main small, .conversation-shell .music-recommendation-main em { font: 400 13px/1.75 var(--ss-font-ui); color: var(--muted); overflow-wrap: anywhere; white-space: normal; }
+.conversation-shell .music-cover-placeholder { background: var(--accent-soft); }
+.conversation-shell .music-recommendation-main img, .conversation-shell .music-cover-placeholder { width: 64px; height: 64px; aspect-ratio: 1; border-radius: 8px; object-fit: cover; flex: none; }
+.conversation-shell .music-recommendation-actions { gap: 8px 12px; flex-wrap: wrap; margin-top: 12px; }
+.conversation-shell .music-recommendation-actions small { font-size: 12px; color: var(--muted); }
+.conversation-shell .music-recommendation-actions button { font: 400 12px/1.5 var(--ss-font-ui); min-height: 32px; padding: 6px 10px; border-radius: var(--ss-radius-control); }
+.conversation-shell .music-recommendation-sources { margin-top: 20px; font-size: 13px; color: var(--muted); }
+.conversation-shell .music-recommendation-sources summary { cursor: pointer; padding-block: 8px; }
+.conversation-shell .music-recommendation-sources[open] > a { animation: ss-reveal var(--ss-motion-menu) var(--ss-ease); }
+.conversation-shell .conversation-notice { box-shadow: none; font-size: 14px; }
+.conversation-shell :is(button, a, input, textarea, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.conversation-shell .composer-frame textarea:focus-visible { outline: none; }
+.conversation-shell .source-reference-card { border-radius: 8px; background: transparent; }
+.conversation-shell .source-reference-copy small, .conversation-shell .source-reference-action { font-size: 12px; }
+.conversation-shell .source-reference-copy strong { font-size: 13px; }
+.conversation-message-shell.is-new-card { animation: ss-reveal var(--ss-motion-enter) var(--ss-ease); }
+@keyframes ss-reveal { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 1120px) { .conversation-shell { grid-template-columns: 220px minmax(0, 1fr); } .conversation-agent-panel { display: none; } }
+@media (max-width: 680px) {
+  .conversation-shell { display: block; }
+  .conversation-sidebar { padding-bottom: 84px; }
+  .conversation-header { min-height: 64px; padding: 8px 12px; gap: 12px; }
+  .conversation-header h1 { font-size: 15px; }
+  .conversation-timeline { scrollbar-gutter: stable both-edges; padding: 24px 16px; gap: 24px; }
+  .conversation-message { font-size: 16px; }
+  .conversation-message.agent { padding-left: 0; padding-top: 36px; }
+  .conversation-shell .tournament-launch-card { padding: 18px 16px; }
+  .conversation-shell .tournament-launch-card h2 { font-size: 22px; }
+  .conversation-shell .music-recommendation-list > li { padding: 16px 0; }
+  .conversation-shell .music-recommendation-main { gap: 12px; }
+  .conversation-shell .music-recommendation-main strong { font-size: 18px; }
+  .conversation-shell .conversation-composer { padding: 12px 12px 66px; }
+  .conversation-composer .composer-frame { padding: 12px; }
+  .composer-key-hint { font-size: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .conversation-shell *, .conversation-shell *::before, .conversation-shell *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+/* Player palette must win over report-card paragraph styling. */
+.conversation-shell .tournament-launch-card .vinyl-details > p { color: var(--ss-player-muted); font-size: 15px; }
+.conversation-shell .tournament-launch-card .vinyl-details > small, .conversation-shell .tournament-launch-card .vinyl-controls small { color: var(--ss-player-muted); font-size: 12px; }
+
+.conversation-shell button.music-recommendation-main { background: transparent; color: var(--ink); border: 0; padding: 0; }
+.conversation-shell .music-recommendation-actions { margin: 12px 0 0 80px; }
+.conversation-shell .music-recommendation-actions a { font-size: 12px; }
+.conversation-shell .recommendation-playback { font-size: 12px; color: var(--accent); }
+.conversation-shell .music-recommendation-card > h3 { font: 500 13px/1.5 var(--ss-font-ui); letter-spacing: .02em; color: var(--muted); text-transform: none; }
+
+.conversation-shell .vinyl-player .vinyl-controls button { background: transparent; color: var(--ss-player-ink); border: 1px solid #8d887e; }
+.conversation-shell .vinyl-player .vinyl-controls button:hover { background: #383833; border-color: #e3ad98; color: #f1c5b3; }

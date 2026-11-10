@@ -102,7 +102,7 @@ def verify(base_url: str) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Verify IndieSoundQuest tournament API end to end")
+    parser = argparse.ArgumentParser(description="Verify SoundSeek tournament API end to end")
     parser.add_argument("--base-url", default="http://127.0.0.1:8080")
     args = parser.parse_args()
     try:

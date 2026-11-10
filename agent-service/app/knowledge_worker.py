@@ -62,11 +62,11 @@ async def execute(message):
 
 
 async def main():
-    connection = await aio_pika.connect_robust(os.getenv("RABBITMQ_URL", "amqp://indiesoundquest:indiesoundquest@rabbitmq/"), fail_fast=False)
+    connection = await aio_pika.connect_robust(os.getenv("RABBITMQ_URL", "amqp://soundseek:soundseek@rabbitmq/"), fail_fast=False)
     channel = await connection.channel()
     await channel.set_qos(prefetch_count=1)
-    queue = await channel.declare_queue("isq.knowledge-index.v1", durable=True,
-        arguments={"x-dead-letter-exchange": "isq.dlx", "x-dead-letter-routing-key": "knowledge.failed"})
+    queue = await channel.declare_queue("soundseek.knowledge-index.v1", durable=True,
+        arguments={"x-dead-letter-exchange": "soundseek.dlx", "x-dead-letter-routing-key": "knowledge.failed"})
     await queue.consume(execute)
     try:
         await asyncio.Future()

@@ -40,7 +40,7 @@ services:
       JAVA_INTERNAL_BASE_URL: ${KNOWLEDGE_JAVA_BASE_URL:-http://java-service:8080}
       AGENT_INTERNAL_SERVICE_TOKEN: ${AGENT_INTERNAL_SERVICE_TOKEN}
       MILVUS_URI: http://knowledge-milvus:19530
-      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-indiesoundquest}:${RABBITMQ_DEFAULT_PASS:-indiesoundquest}@rabbitmq/
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-soundseek}:${RABBITMQ_DEFAULT_PASS:-soundseek}@rabbitmq/
       HF_HOME: /cache/huggingface
       FASTEMBED_CACHE_PATH: /cache/fastembed
     depends_on:

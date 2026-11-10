@@ -180,7 +180,7 @@ class WebSearchTool:
                             break
                         async with client.stream(
                             "GET", current_url,
-                            headers={"User-Agent": "Mozilla/5.0 (compatible; IndieSoundQuest/0.1; public evidence reader)"},
+                            headers={"User-Agent": "Mozilla/5.0 (compatible; SoundSeek/0.1; public evidence reader)"},
                         ) as response:
                             if response.status_code in {301, 302, 303, 307, 308} and response.headers.get("location"):
                                 current_url = urljoin(current_url, response.headers["location"])
@@ -435,7 +435,7 @@ class DomesticContentResearchTool:
 
 
 def _research_user_agent() -> str:
-    return "IndieSoundQuest/0.1 (https://github.com/garfieldra/IndieSoundQuest)"
+    return "SoundSeek/0.1 (https://github.com/garfieldra/ProjectChuanZhi)"
 
 
 def _lastfm_sources(payload: dict, method: str, artist_name: str, track_title: str | None) -> list[dict]:
@@ -538,7 +538,7 @@ def _decode_document(data: bytes, content_type: str) -> str:
 
 class KnowledgeSearchTool:
     """Only return published revisions validated by the Java authority."""
-    def __init__(self, uri: str, embedding_model: str = "BAAI/bge-small-zh-v1.5", collection_name: str = "isq_song_theme_cards_v1"):
+    def __init__(self, uri: str, embedding_model: str = "BAAI/bge-small-zh-v1.5", collection_name: str = "soundseek_song_theme_cards_v1"):
         from .knowledge import KnowledgeRetriever
         from .settings import settings
         self.retriever = KnowledgeRetriever(settings.java_internal_base_url, settings.agent_internal_service_token, uri)

@@ -12,7 +12,7 @@ def main() -> None:
     parser.add_argument("--base-url", default="http://localhost:8080"); args = parser.parse_args()
     if not args.input.exists():
         if args.dry_run:
-            print(json.dumps({"approvedCards": 0, "collection": os.getenv("KNOWLEDGE_COLLECTION", "isq_song_theme_cards_v1"), "reason": "no curated cards yet"}, ensure_ascii=False)); return
+            print(json.dumps({"approvedCards": 0, "collection": os.getenv("KNOWLEDGE_COLLECTION", "soundseek_song_theme_cards_v1"), "reason": "no curated cards yet"}, ensure_ascii=False)); return
         raise SystemExit(f"curated input does not exist: {args.input}")
     cards = [json.loads(line) for line in args.input.read_text(encoding="utf-8").splitlines() if line.strip()]
     approved = [card for card in cards if card.get("sourceType") == "LOCAL_CURATED" and card.get("reviewStatus") == "APPROVED"]

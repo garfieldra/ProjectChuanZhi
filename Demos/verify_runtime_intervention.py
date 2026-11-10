@@ -33,7 +33,7 @@ def _queue(client: httpx.Client, run_id: str, key: str, content: str) -> dict:
 
 
 def main() -> None:
-    base_url = os.getenv("ISQ_API_BASE_URL", "http://127.0.0.1:8080")
+    base_url = os.getenv("SOUNDSEEK_API_BASE_URL", "http://127.0.0.1:8080")
     with api_client(base_url=base_url, timeout=45) as client:
         conversation_id = client.post("/api/v1/conversations").raise_for_status().json()["id"]
         queued = client.post(

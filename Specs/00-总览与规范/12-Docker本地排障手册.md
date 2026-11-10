@@ -2,7 +2,7 @@
 
 **状态：** 已验证  
 **最后更新：** 2026-08-02  
-**适用范围：** IndieSoundQuest 的 macOS + Docker Desktop 本地开发环境
+**适用范围：** SoundSeek 的 macOS + Docker Desktop 本地开发环境
 
 ## 1. 目的
 
@@ -23,7 +23,7 @@ docker compose --env-file .env.example -f infra/compose.yaml logs --tail=120 jav
 | --- | --- | --- |
 | `java-service` 显示 `healthy` | 服务已正常运行 | 直接访问 `/swagger-ui/index.html` |
 | `Exited` 或不断重启 | Java 应用启动失败 | 以 `logs` 最后一个 `ERROR` 为准处理 |
-| 没有任何 IndieSoundQuest 容器 | Compose 未成功启动或当前目录/配置文件不对 | 回到第 3 节启动 |
+| 没有任何 SoundSeek 容器 | Compose 未成功启动或当前目录/配置文件不对 | 回到第 3 节启动 |
 | 停在 `Building` | 构建依赖或网络问题 | 看第 4 节 |
 
 可访问的验收地址：
@@ -46,7 +46,7 @@ python3 Demos/verify_tournament_api.py
 ## 3. 正确的本地启动顺序
 
 ```bash
-cd /Users/wangrui/Documents/Projects/IndieSoundQuest
+cd /Users/wangrui/Documents/Projects/ProjectChuanZhi
 mvn -q -DskipTests package -f java-service/pom.xml
 docker compose --env-file .env.example -f infra/compose.yaml up -d --build mysql redis java-service
 ```
@@ -129,7 +129,7 @@ found [char], but expecting [varchar(255)]
 - 先看容器状态和日志，再修改配置；不要根据浏览器错误页猜测。
 - 先修复构建/启动的第一个明确错误，再重新验证；后续错误可能在前一个错误消失后才出现。
 - 不要将 `docker compose down -v` 作为排障的第一选择：它会删除 MySQL、Redis 等本地演示数据。
-- Docker Desktop 显示 Engine running 不代表项目服务已经启动；需要看到 `indie-sound-quest-java-service-1` 为 `healthy`。
+- Docker Desktop 显示 Engine running 不代表项目服务已经启动；需要看到 `soundseek-java-service-1` 为 `healthy`。
 - Swagger 推荐使用完整入口 `/swagger-ui/index.html`，避免不同 springdoc 版本对目录重定向的差异。
 
 ## 7. 本次修复的最终验收记录

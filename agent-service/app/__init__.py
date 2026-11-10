@@ -1,1 +1,1 @@
-"""IndieSoundQuest Agent service package."""
+"""SoundSeek Agent service package."""

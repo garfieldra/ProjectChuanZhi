@@ -12,7 +12,7 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-app = FastAPI(title="IndieSoundQuest Bilibili Research Sidecar", version="0.1.0")
+app = FastAPI(title="SoundSeek Bilibili Research Sidecar", version="0.1.0")
 PURPOSES = {"candidate_discovery", "cultural_context", "recommendation_validation"}
 
 class SearchRequest(BaseModel):

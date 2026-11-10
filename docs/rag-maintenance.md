@@ -44,3 +44,9 @@ Markdown/TXT 可载入人工整理区；超过单条限制时必须由维护者�
 - 检索质量：使用 `Demos/evals/knowledge/run_eval.py`，报告检索命中、支持条目及耗时；语义事实与归因仍需对照材料审阅。
 
 历史主题卡必须重新确认可用文件、实体和审核记录，再经正式导入入口发布。旧的直接 Milvus 写入脚本不能替代权威审核闭环。
+
+## 与主干合并后的版本约定
+
+主干的 `V23__create_saved_song.sql` 保持不变，RAG 新迁移顺延为 `V24__music_evidence_knowledge.sql` 和 `V25__pin_knowledge_model_revision.sql`。Java 知识模块随主干迁入 `com.soundseek.knowledge`；知识队列、死信和新建集合统一采用 `soundseek` 前缀。
+
+主干 V23 数据库升级及空库完整迁移均通过隔离 MySQL 验证。本次合并不对现有业务数据库执行迁移。已执行合并前 RAG V23/V24 的试验库不能直接套用新编号或自动 repair；此类试验库应先备份，再单独处理迁移历史与数据兼容。

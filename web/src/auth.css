@@ -1,0 +1,23 @@
+.auth-dialog { width: min(420px, calc(100% - 32px)); max-height: calc(100dvh - 48px); margin: auto; padding: 34px; overflow-y: auto; border: 1px solid #dfdcd5; border-radius: 24px; background: #fffefb; color: #242320; font: 400 15px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+.auth-dialog::backdrop { background: #24211c55; }
+.auth-dialog h2 { margin: 9px 0 10px; font: 500 30px/1.3 "Songti SC", "STSong", serif; overflow-wrap: anywhere; }
+.auth-dialog > p:not(.eyebrow) { margin: 0 0 24px; color: #77736c; font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
+.auth-dialog .eyebrow { color: #a64b3c; font-size: 11px; letter-spacing: .12em; }
+.auth-dialog-close { position: absolute; top: 16px; right: 16px; width: 32px; height: 32px; padding: 7px; border: 0; border-radius: 50%; background: transparent; color: #79756e; }
+.auth-dialog-close svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.auth-dialog-close:hover { background: #efede8; }
+.auth-dialog form, .auth-dialog fieldset { display: grid; gap: 16px; }
+.auth-dialog fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.auth-dialog label { display: grid; gap: 7px; color: #625e57; font-size: 13px; font-weight: 500; }
+.auth-dialog input { width: 100%; min-height: 44px; padding: 11px 14px; border: 1px solid #d8d4cc; border-radius: 12px; background: #faf9f6; color: #292723; font: inherit; }
+.auth-dialog input:focus-visible { outline: 2px solid #a64b3c; outline-offset: 2px; }
+.auth-primary, .auth-secondary, .auth-dialog a.auth-github { width: 100%; min-height: 44px; padding: 11px 16px; border-radius: 999px; display: grid; place-items: center; text-align: center; text-decoration: none; font-size: 14px; }
+.auth-primary { margin-top: 4px; border: 1px solid #a64b3c; background: #a64b3c; color: #fffdf8; }
+.auth-primary:hover:not(:disabled) { background: #913e31; }
+.auth-secondary, .auth-dialog a.auth-github { border: 1px solid #d7d3cb; background: transparent; color: #47433e; }
+.auth-dialog a.auth-github { margin-top: 12px; }
+.auth-switch { width: 100%; margin-top: 18px; padding: 6px 0; border: 0; background: transparent; color: #77716a; font-size: 13px; }
+.auth-dialog button:disabled, .auth-dialog fieldset:disabled { opacity: .6; cursor: wait; }
+.auth-dialog .auth-error { margin: 0 0 4px; color: #9c493a; font-size: 13px; }
+.auth-password-hint { margin-top: -9px; color: #817b73; font-size: 12px; }
+@media (max-width: 480px) { .auth-dialog { padding: 30px 24px; border-radius: 20px; } }

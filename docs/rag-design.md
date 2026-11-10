@@ -176,7 +176,7 @@ Milvus 命中必须携带内容版本及索引代次，Java 批量检查：
 
 ## 9. Milvus 集合、嵌入与升级
 
-事实类与主题卡使用两个集合族：`isq_fact_evidence_g{n}`、`isq_theme_cards_g{n}`。一个请求固定索引代次及其模型，不跨代次混合距离。
+事实类与主题卡使用两个集合族：`soundseek_fact_evidence_g{n}`、`soundseek_theme_cards_g{n}`。一个请求固定索引代次及其模型，不跨代次混合距离。
 
 索引字段包括版本化主键、entry_id、revision、generation、知识类型、主要实体、关联实体、语言、内容指纹和向量。实体多值过滤须在固定 Milvus/SDK 组合上验证，不能依赖未验证版本能力；需要时由 Java 先提供受控候选 ID 约束。
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { progressMetricsText, projectResponseStream, publicProgress } from './agentRunStream'
+import { progressMetricsText, projectResponseStream, publicProgress, normalizePlanHistory, type AgentRunPlan } from './agentRunStream'
 
 describe('AgentRun public events', () => {
   it('projects structured tool completion into a visible progress item', () => {
@@ -36,5 +36,20 @@ describe('AgentRun public events', () => {
     )).toMatchObject({ status: 'commentary', message: '我已经找到可用线索。' })
     expect(projectResponseStream('旧内容', { sequenceNumber: 9, type: 'RESPONSE_STARTED', payloadJson: '{}' }, {})).toBe('')
     expect(projectResponseStream('第一段', { sequenceNumber: 10, type: 'RESPONSE_DELTA', payloadJson: '{}' }, { delta: '，第二段' })).toBe('第一段，第二段')
+  })
+})
+
+describe('reconnected plan history', () => {
+  const plan = (revision:number, summary='snapshot'):AgentRunPlan => ({revision,summary,goal:'音乐探索',items:[]})
+  it('deduplicates the current snapshot and durable revisions after refresh', () => {
+    const history=normalizePlanHistory([plan(12),plan(5),plan(7),plan(12,'complete')])
+    expect(history.map(item=>item.revision)).toEqual([5,7,12])
+    expect(history[history.length - 1]?.summary).toBe('complete')
+  })
+  it('keeps the newest revisions when older events arrive after the snapshot', () => {
+    const history=normalizePlanHistory([plan(20),...Array.from({length:10},(_,index)=>plan(index+1))])
+    expect(history).toHaveLength(8)
+    expect(history[history.length - 1]?.revision).toBe(20)
+    expect(history[0].revision).toBe(4)
   })
 })

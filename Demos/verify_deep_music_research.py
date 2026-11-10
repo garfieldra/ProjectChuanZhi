@@ -16,7 +16,7 @@ PROMPT = "请深入分析张悬《宝贝》的创作背景与制作语境，以�
 
 
 def main() -> None:
-    base_url = os.getenv("ISQ_API_BASE_URL", "http://127.0.0.1:8080")
+    base_url = os.getenv("SOUNDSEEK_API_BASE_URL", "http://127.0.0.1:8080")
     with api_client(base_url=base_url, timeout=30) as client:
         conversation_id = client.post("/api/v1/conversations").raise_for_status().json()["id"]
         queued = client.post(
