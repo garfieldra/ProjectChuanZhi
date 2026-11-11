@@ -21,3 +21,6 @@
 .auth-dialog .auth-error { margin: 0 0 4px; color: #9c493a; font-size: 13px; }
 .auth-password-hint { margin-top: -9px; color: #817b73; font-size: 12px; }
 @media (max-width: 480px) { .auth-dialog { padding: 30px 24px; border-radius: 20px; } }
+
+.account-confirmation { max-width: 560px; margin: 8vh auto; padding: 24px; }
+.account-confirmation form, .account-confirmation label { display: grid; gap: 12px; margin-block: 20px; }

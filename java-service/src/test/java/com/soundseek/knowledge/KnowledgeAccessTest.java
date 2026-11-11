@@ -17,8 +17,11 @@ class KnowledgeAccessTest {
     assertThrows(ResponseStatusException.class,()->access.require(()->"operator@example.com"));
   }
   @Test void onlyActiveExplicitlyListedAccountAllowed() {
-    var accounts=mock(AccountService.class);var access=new KnowledgeAccess(accounts," OPERATOR@example.com ");
-    when(accounts.current("operator@example.com")).thenReturn(Optional.of(UserAccount.create("operator@example.com","维护者",null,UUID.randomUUID())));
-    assertEquals("operator@example.com",access.require(()->"operator@example.com"));
+    var accounts=mock(AccountService.class);var user=UserAccount.create("operator@example.com","维护者",null,UUID.randomUUID());
+    String id=user.getId().toString();var access=new KnowledgeAccess(accounts,id);
+    when(accounts.current(id)).thenReturn(Optional.of(user));
+    assertThrows(ResponseStatusException.class,()->access.require(()->id));
+    user.verifyEmail();assertEquals(id,access.require(()->id));
+    user.disable();assertThrows(ResponseStatusException.class,()->access.require(()->id));
   }
 }

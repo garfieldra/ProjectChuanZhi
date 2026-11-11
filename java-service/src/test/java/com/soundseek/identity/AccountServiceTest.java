@@ -21,6 +21,13 @@ class AccountServiceTest {
   private final GuestIdentityService guestIdentities = mock(GuestIdentityService.class);
   private final AccountService service = new AccountService(users, identities, passwords, assets, guestSessions, profiles, guestIdentities);
 
+  @Test void githubLoginRejectsDisabledExistingAccountBeforeMergingAssets(){
+    var guest=new GuestSession(UUID.randomUUID(),"e".repeat(64));var user=UserAccount.create(null,"GitHub 用户",null,UUID.randomUUID());user.disable();
+    when(identities.findByProviderAndProviderSubject("GITHUB","123")).thenReturn(Optional.of(AuthIdentity.github(user.getId(),"123")));
+    when(users.lockById(user.getId())).thenReturn(Optional.of(user));
+    org.junit.jupiter.api.Assertions.assertThrows(org.springframework.security.authentication.DisabledException.class,()->service.completeGithubLogin("123","name",null,guest));
+    verifyNoInteractions(assets,profiles);verify(guestIdentities,never()).revoke(any());
+  }
   @Test
   void registrationRevokesGuestTokenAfterAttachingAssets() {
     var guest = new GuestSession(UUID.randomUUID(), "a".repeat(64));

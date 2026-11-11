@@ -13,14 +13,14 @@ import org.springframework.web.server.ResponseStatusException;
 public class KnowledgeAccess {
   private final Set<String> maintainers;
   private final AccountService accounts;
-  public KnowledgeAccess(AccountService accounts, @Value("${knowledge.maintainers:}") String configured) {
+  public KnowledgeAccess(AccountService accounts, @Value("${knowledge.maintainer-ids:}") String configured) {
     this.accounts = accounts;
     maintainers = new HashSet<>();
     for (String value : configured.split(",")) if (!value.isBlank()) maintainers.add(value.trim().toLowerCase(Locale.ROOT));
   }
   public String require(Principal principal) {
     if (principal == null || !maintainers.contains(principal.getName().toLowerCase(Locale.ROOT)) ||
-        accounts.current(principal.getName()).filter(a -> "ACTIVE".equals(a.getStatus())).isEmpty())
+        accounts.current(principal.getName()).filter(a -> "ACTIVE".equals(a.getStatus()) && a.isEmailVerified()).isEmpty())
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "KNOWLEDGE_MAINTAINER_REQUIRED");
     return principal.getName().toLowerCase(Locale.ROOT);
   }

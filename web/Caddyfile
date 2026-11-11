@@ -21,6 +21,11 @@ www.{$SITE_ADDRESS} {
 		}
 	}
 
+	@account_oauth path /oauth2/* /login/oauth2/*
+	handle @account_oauth {
+		reverse_proxy java-service:8080
+	}
+
 	handle /api/* {
 		reverse_proxy java-service:8080
 	}

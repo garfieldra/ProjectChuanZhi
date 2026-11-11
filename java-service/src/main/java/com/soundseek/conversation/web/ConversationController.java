@@ -18,6 +18,7 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 @RestController
 @RequestMapping("/api/v1/conversations")
 public class ConversationController {
+  @org.springframework.beans.factory.annotation.Autowired private com.soundseek.identity.AccountStreamGuard streamGuard;
   private final ConversationApplicationService service;
   private final RedisRateLimitService rateLimit;
   private final ObjectMapper json;
@@ -82,10 +83,12 @@ public class ConversationController {
   StreamingResponseBody message(@PathVariable UUID id, @RequestHeader("Idempotency-Key") UUID key, @Valid @RequestBody Send body, HttpServletRequest request) {
     var guest = guest(request);
     rateLimit.assertConversationMessageAllowed(guest.getId());
+    var allowed=streamGuard.capture(request);
     return out -> {
       try {
-        var result = service.reply(id, guest.getId(), key, body.content(), event -> write(out, event.type(), event.data()));
-        write(out, "message_completed", json.writeValueAsString(MessageView.of(result)));
+        if(!allowed.getAsBoolean())return;
+        var result = service.reply(id, guest.getId(), key, body.content(), event -> { if(allowed.getAsBoolean())write(out, event.type(), event.data()); });
+        if(allowed.getAsBoolean())write(out, "message_completed", json.writeValueAsString(MessageView.of(result)));
       } catch (Exception e) {
         write(out, "error", "{\"code\":\"CONVERSATION_UNAVAILABLE\",\"message\":\"这次音乐对话暂时无法完成，请稍后重试\",\"retryable\":true}");
       }

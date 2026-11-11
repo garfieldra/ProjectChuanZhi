@@ -22,7 +22,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @AutoConfigureMockMvc
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class KnowledgeMergeIntegrationTest {
-  @Container static MySQLContainer<?> mysql=new MySQLContainer<>("mysql:8.4");
+  @Container static MySQLContainer<?> mysql=new MySQLContainer<>("mysql:8.4").withUrlParam("sslMode","DISABLED").withUrlParam("allowPublicKeyRetrieval","true");
   @Container static GenericContainer<?> redis=new GenericContainer<>("redis:7.4-alpine").withExposedPorts(6379);
   @Container static GenericContainer<?> rabbit=new GenericContainer<>("rabbitmq:3.13-management-alpine")
       .withEnv("RABBITMQ_DEFAULT_USER","merge_test").withEnv("RABBITMQ_DEFAULT_PASS","merge-test-only-password").withExposedPorts(5672);

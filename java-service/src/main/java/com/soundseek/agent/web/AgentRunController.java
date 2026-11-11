@@ -26,6 +26,7 @@ import org.slf4j.LoggerFactory;
 @RequestMapping("/api/v1/agent-runs")
 public class AgentRunController {
   private static final Logger log = LoggerFactory.getLogger(AgentRunController.class);
+  @org.springframework.beans.factory.annotation.Autowired private com.soundseek.identity.AccountStreamGuard streamGuard;
   private final AgentRunApplicationService agentRuns;
   private final AgentRunFollowUpApplicationService followUps;
   private final ConversationApplicationService conversations;
@@ -56,7 +57,7 @@ public class AgentRunController {
   }
 
   @GetMapping(value="/{id}/events:stream",produces=MediaType.TEXT_EVENT_STREAM_VALUE)
-  StreamingResponseBody streamEvents(@PathVariable UUID id,@RequestParam(defaultValue="0")long afterSequence,@RequestHeader(value="Last-Event-ID",required=false)Long lastEventId,HttpServletRequest request,HttpServletResponse response){var guest=((GuestSession)request.getAttribute(GuestIdentityFilter.ATTRIBUTE)).getId();agentRuns.owned(id,guest);response.setContentType(MediaType.TEXT_EVENT_STREAM_VALUE);response.setCharacterEncoding(StandardCharsets.UTF_8.name());response.setHeader(HttpHeaders.CACHE_CONTROL,"no-cache, no-transform");response.setHeader("X-Accel-Buffering","no");return output->{long cursor=Math.max(afterSequence,lastEventId==null?0:lastEventId);for(int idle=0;idle<900;idle++){var batch=agentRuns.eventsAfter(id,guest,cursor);for(var event:batch){cursor=event.getSequenceNumber();var data=json.writeValueAsString(EventView.of(event));output.write(("id: "+cursor+"\nevent: run_event\ndata: "+data+"\n\n").getBytes(StandardCharsets.UTF_8));}var status=agentRuns.owned(id,guest).getStatus();if(isStreamTerminal(status)){output.write(("event: run_status\ndata: {\"status\":\""+status.name()+"\",\"lastSequence\":"+cursor+"}\n\n").getBytes(StandardCharsets.UTF_8));output.flush();return;}if(batch.isEmpty())output.write(": heartbeat\n\n".getBytes(StandardCharsets.UTF_8));output.flush();try{Thread.sleep(1000);}catch(InterruptedException interrupted){Thread.currentThread().interrupt();return;}}};}
+  StreamingResponseBody streamEvents(@PathVariable UUID id,@RequestParam(defaultValue="0")long afterSequence,@RequestHeader(value="Last-Event-ID",required=false)Long lastEventId,HttpServletRequest request,HttpServletResponse response){var guest=((GuestSession)request.getAttribute(GuestIdentityFilter.ATTRIBUTE)).getId();agentRuns.owned(id,guest);response.setContentType(MediaType.TEXT_EVENT_STREAM_VALUE);response.setCharacterEncoding(StandardCharsets.UTF_8.name());response.setHeader(HttpHeaders.CACHE_CONTROL,"no-cache, no-transform");response.setHeader("X-Accel-Buffering","no");var allowed=streamGuard.capture(request);return output->{long cursor=Math.max(afterSequence,lastEventId==null?0:lastEventId);for(int idle=0;idle<900;idle++){if(!allowed.getAsBoolean())return;var batch=agentRuns.eventsAfter(id,guest,cursor);for(var event:batch){if(!allowed.getAsBoolean())return;cursor=event.getSequenceNumber();var data=json.writeValueAsString(EventView.of(event));output.write(("id: "+cursor+"\nevent: run_event\ndata: "+data+"\n\n").getBytes(StandardCharsets.UTF_8));}var status=agentRuns.owned(id,guest).getStatus();if(isStreamTerminal(status)){output.write(("event: run_status\ndata: {\"status\":\""+status.name()+"\",\"lastSequence\":"+cursor+"}\n\n").getBytes(StandardCharsets.UTF_8));output.flush();return;}if(batch.isEmpty())output.write(": heartbeat\n\n".getBytes(StandardCharsets.UTF_8));output.flush();try{Thread.sleep(1000);}catch(InterruptedException interrupted){Thread.currentThread().interrupt();return;}}};}
 
   private boolean isStreamTerminal(AgentRunStatus status){return status==AgentRunStatus.COMPLETED||status==AgentRunStatus.WAITING_FOR_USER||status==AgentRunStatus.FAILED||status==AgentRunStatus.CANCELLED||status==AgentRunStatus.EXPIRED;}
 
@@ -103,8 +104,10 @@ public class AgentRunController {
   StreamingResponseBody answers(@PathVariable UUID id, @RequestHeader("Idempotency-Key") UUID key, @Valid @RequestBody AnswersBody body, HttpServletRequest request) {
     var guest = ((GuestSession) request.getAttribute(GuestIdentityFilter.ATTRIBUTE)).getId();
     rateLimit.assertAgentRunAnswerAllowed(guest);
+    var allowed=streamGuard.capture(request);
     return output -> {
       try {
+        if(!allowed.getAsBoolean())return;
         var run = agentRuns.owned(id, guest);
         if (run.getStatus() != AgentRunStatus.WAITING_FOR_USER) throw new IllegalStateException("AGENT_RUN_NOT_WAITING");
         var snapshot = json.readTree(run.getContextSnapshotJson() == null ? "{}" : run.getContextSnapshotJson());
@@ -122,12 +125,12 @@ public class AgentRunController {
         var result = agent.resume(payload, id, event -> {
           try {
             agentRuns.relaySseEvent(id, event.type(), event.data());
-            write(output, event.type(), event.data());
+            if(allowed.getAsBoolean())write(output, event.type(), event.data());
           } catch (Exception ignored) {}
         });
         var message = conversations.completeAgentAnswer(conversationId, guest, id, key, result);
         agentRuns.complete(id, json.writeValueAsString(Map.of("messageId", message.getId())));
-        write(output, "message_completed", json.writeValueAsString(Map.of("id", message.getId(), "content", message.getTextContent())));
+        if(allowed.getAsBoolean())write(output, "message_completed", json.writeValueAsString(Map.of("id", message.getId(), "content", message.getTextContent())));
       } catch (Exception e) {
         log.error("Failed to resume Agent Run {} after clarification", id, e);
         write(output, "error", "{\"code\":\"AGENT_ANSWER_FAILED\",\"message\":\"澄清答案暂时无法处理，请稍后重试\"}");

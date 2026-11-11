@@ -9,6 +9,8 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       port: 5173,
       proxy: {
+        '/oauth2': { target: env.VITE_API_PROXY_TARGET ?? 'http://localhost:8080', changeOrigin: true },
+        '/login/oauth2': { target: env.VITE_API_PROXY_TARGET ?? 'http://localhost:8080', changeOrigin: true },
         '/api': {
           // Vite only serves local development; the production web container
           // uses Caddy and its own reverse proxy configuration.

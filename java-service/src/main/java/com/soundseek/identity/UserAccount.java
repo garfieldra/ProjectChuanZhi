@@ -5,10 +5,11 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
+@org.hibernate.annotations.DynamicUpdate
 @Table(name = "user_account")
 public class UserAccount {
   @Id private UUID id;
-  @Column(name = "email_normalized", nullable = false, unique = true, length = 320) private String emailNormalized;
+  @Column(name = "email_normalized", nullable = true, unique = true, length = 320) private String emailNormalized;
   @Column(name = "display_name", nullable = false, length = 80) private String displayName;
   @Column(name = "avatar_url", length = 1024) private String avatarUrl;
   @Column(nullable = false, length = 24) private String status;
@@ -16,7 +17,16 @@ public class UserAccount {
   @Column(name = "created_at", nullable = false) private Instant createdAt;
   @Column(name = "updated_at", nullable = false) private Instant updatedAt;
 
+  @Column(name="email_verified_at") private Instant emailVerifiedAt;
+  @Column(name="auth_version",nullable=false) private long authVersion;
   protected UserAccount() {}
+  public boolean isEmailVerified(){return emailVerifiedAt!=null;}
+  public long getAuthVersion(){return authVersion;}
+  public void verifyEmail(){emailVerifiedAt=Instant.now();updatedAt=Instant.now();}
+  public void changeEmail(String email){emailNormalized=email;verifyEmail();revokeSessions();}
+  public void revokeSessions(){authVersion++;updatedAt=Instant.now();}
+  public void disable(){status="DISABLED";revokeSessions();}
+
 
   public static UserAccount create(String email, String displayName, String avatarUrl, UUID guestSessionId) {
     var value = new UserAccount();

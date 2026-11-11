@@ -3,6 +3,7 @@ import com.soundseek.redis.RateLimitExceededException;
 import com.soundseek.identity.AccountService;
 import com.soundseek.tournament.application.CandidatePoolContractException; import com.soundseek.tournament.application.CandidatePoolUnavailableException; import com.soundseek.tournament.application.IdempotencyKeyConflictException; import java.util.*; import org.springframework.http.*; import org.springframework.web.bind.MethodArgumentNotValidException; import org.springframework.web.bind.MissingRequestHeaderException; import org.springframework.web.bind.annotation.*;
 @RestControllerAdvice public class ApiExceptionHandler {
+ @ExceptionHandler(com.soundseek.identity.AuthFailure.class) ResponseEntity<Map<String,Object>> authFailure(com.soundseek.identity.AuthFailure e){return error(e.status(),e.code(),e.getMessage());}
  @ExceptionHandler(org.springframework.security.core.AuthenticationException.class) ResponseEntity<Map<String,Object>> authentication(){return error(HttpStatus.UNAUTHORIZED,"AUTHENTICATION_FAILED","邮箱或密码不正确");}
  @ExceptionHandler(AccountService.DuplicateAccountException.class) ResponseEntity<Map<String,Object>> duplicateAccount(){return error(HttpStatus.CONFLICT,"ACCOUNT_ALREADY_EXISTS","这个邮箱已经注册，请直接登录");}
  @ExceptionHandler(NoSuchElementException.class) ResponseEntity<Map<String,Object>> notFound(){return error(HttpStatus.NOT_FOUND,"RESOURCE_NOT_FOUND","资源不存在或不可访问");}

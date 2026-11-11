@@ -17,7 +17,7 @@ import org.testcontainers.junit.jupiter.*;
 
 @Testcontainers
 class KnowledgeServiceTest {
-  @Container static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4");
+  @Container static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4").withUrlParam("sslMode","DISABLED").withUrlParam("allowPublicKeyRetrieval","true");
   static KnowledgeService service;
   static JdbcTemplate db;
   static KnowledgeIndexPreflight preflight;
