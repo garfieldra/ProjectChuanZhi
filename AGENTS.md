@@ -1,7 +1,7 @@
 # 寻声 SoundSeek 协作约定
 
 - 正式中文名为「寻声」，英文名为 `SoundSeek`，技术标识统一使用 `soundseek`。
-- 当前工作目录为 `/Users/wangrui/Documents/Projects/ProjectChuanZhi`，GitHub 仓库为 `garfieldra/ProjectChuanZhi`；音乐探索为产品主场景。
+- GitHub 仓库为 `garfieldra/ProjectChuanZhi`；音乐探索为产品主场景。本地项目位置以用户指定目录和当前会话环境为准，不将某台开发机的绝对路径作为通用要求。
 
 ## 主动推进
 

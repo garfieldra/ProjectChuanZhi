@@ -36,6 +36,7 @@ public class SecurityConfiguration {
     http.authorizeHttpRequests(authorize -> authorize
             .requestMatchers("/api/v1/auth/**", "/oauth2/**", "/login/**", "/actuator/health", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
             .requestMatchers("/internal/v1/**").hasRole("INTERNAL")
+            .requestMatchers("/api/v1/admin/knowledge/**").hasRole("USER")
             .requestMatchers("/api/v1/**").hasAnyRole("GUEST", "USER")
             .anyRequest().permitAll())
         .csrf(value -> value.csrfTokenRepository(csrf).csrfTokenRequestHandler(csrfRequestHandler).ignoringRequestMatchers(new AntPathRequestMatcher("/internal/v1/**")))

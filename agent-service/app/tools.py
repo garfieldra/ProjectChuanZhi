@@ -537,15 +537,34 @@ def _decode_document(data: bytes, content_type: str) -> str:
 
 
 class KnowledgeSearchTool:
-    """Reads only the reviewed Milvus collection; experimental cards are never queried."""
+    """Only return published revisions validated by the Java authority."""
     def __init__(self, uri: str, embedding_model: str = "BAAI/bge-small-zh-v1.5", collection_name: str = "soundseek_song_theme_cards_v1"):
-        self.uri, self.embedding_model, self.collection_name = uri, embedding_model, collection_name
-        self._store = None
+        from .knowledge import KnowledgeRetriever
+        from .settings import settings
+        self.retriever = KnowledgeRetriever(settings.java_internal_base_url, settings.agent_internal_service_token, uri)
+
+    async def search(self, request: dict) -> dict:
+        return await self.retriever.search(request)
+
     async def search_verified(self, query: str, recording_ids: list[str]) -> list[dict]:
-        from .knowledge_store import ThemeCardKnowledgeStore
-        if self._store is None: self._store = ThemeCardKnowledgeStore(self.uri, self.embedding_model, self.collection_name)
-        try: return await asyncio.wait_for(asyncio.to_thread(self._store.search, query), timeout=12)
-        except Exception: return []
+        batches = [recording_ids[offset:offset + 20] for offset in range(0, len(recording_ids), 20)] or [[]]
+        results = await asyncio.gather(*(self.search({"query": query, "entities": [{"type": "RECORDING", "id": i} for i in batch], "knowledgeTypes": ["THEME_CARD"]}) for batch in batches))
+        if all(result["status"] == "unavailable" for result in results):
+            raise RuntimeError("KNOWLEDGE_UNAVAILABLE")
+        evidence, seen = [], set()
+        for rank in range(max((len(result["evidence"]) for result in results), default=0)):
+            for result in results:
+                if rank >= len(result["evidence"]):
+                    continue
+                item = result["evidence"][rank]
+                key = (item["entryId"], item["revision"])
+                if key not in seen:
+                    seen.add(key)
+                    evidence.append(item)
+        return [{**item, **(item.get("theme") or {}), "summary": item["statement"],
+                 "claimId": f'{item["entryId"]}:{item["revision"]}', "sourceType": "LOCAL_CURATED", "reviewStatus": "APPROVED"}
+                for item in evidence[:6]]
+
 
 
 class TournamentFactsTool:

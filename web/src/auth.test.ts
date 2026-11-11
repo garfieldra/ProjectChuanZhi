@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { requestAuth } from './auth'
+import { AUTH_SESSION_CHANGED_EVENT, requestAuth } from './auth'
 
 const json = (body: object, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
@@ -49,4 +49,26 @@ describe('shared account API contract', () => {
     await expect(requestAuth('session')).resolves.toEqual({ authenticated: false, githubEnabled: false })
     expect(vi.getTimerCount()).toBe(0)
   })
+
+  it('notifies the knowledge entry when login or logout changes the session without a page reload', async () => {
+    const target = new EventTarget(), changed = vi.fn()
+    target.addEventListener(AUTH_SESSION_CHANGED_EVENT, changed)
+    vi.stubGlobal('window', target)
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: string) => json({ authenticated: url.endsWith('/login'), githubEnabled: false })))
+    await requestAuth('session')
+    expect(changed).not.toHaveBeenCalled()
+    await requestAuth('login', { email: 'maintainer@example.test', password: 'test-only-password' })
+    await requestAuth('logout')
+    expect(changed).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not notify permission refresh when a login fails', async () => {
+    const target = new EventTarget(), changed = vi.fn()
+    target.addEventListener(AUTH_SESSION_CHANGED_EVENT, changed)
+    vi.stubGlobal('window', target)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({}, 401)))
+    await expect(requestAuth('login', {})).rejects.toThrow('邮箱或密码不正确')
+    expect(changed).not.toHaveBeenCalled()
+  })
+
 })

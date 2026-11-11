@@ -98,6 +98,10 @@ def classify_source_quality(source: dict) -> dict:
     host = (urlparse(str(source.get("sourceUrl") or source.get("url") or "")).hostname or "").lower()
     title = str(source.get("sourceTitle") or source.get("title") or "").lower()
     has_excerpt = len(str(source.get("pageExcerpt") or source.get("excerpt") or "").strip()) >= 120
+    if source.get("entryId"):
+        theme = source.get("knowledgeType") == "THEME_CARD"
+        return {"tier": "C" if theme else "B", "score": 0.55 if theme else 0.74,
+                "kind": "reviewed_theme" if theme else "reviewed_evidence", "hasFullTextExcerpt": has_excerpt}
     if host.endswith(("musicbrainz.org", "discogs.com")):
         tier, score, kind = "A", 0.88, "structured_catalog"
     elif host.endswith(("wikipedia.org", "wikimedia.org", "wikidata.org")):
@@ -131,7 +135,7 @@ def apply_claim_reviews(
             output.append(sanitize_claims([claim], allowed_refs)[0])
             continue
         reviewed += 1
-        refs = [ref for ref in review.supported_refs if ref in allowed_refs]
+        refs = [ref for ref in review.supported_refs if ref in allowed_refs and not (claim.claim_type == "FACT" and source_quality.get(ref, {}).get("kind") == "reviewed_theme")]
         verdict = review.verdict
         if verdict == "supported" and not refs:
             verdict = "unsupported"
@@ -220,14 +224,16 @@ def inherited_analysis_sources(request: ConversationAgentRequest) -> list[dict]:
     context = latest_analysis_context(request)
     output: list[dict] = []
     for item in list(context.get("payload", {}).get("sources") or [])[:12]:
-        if not isinstance(item, dict) or not item.get("url"):
+        if not isinstance(item, dict) or not (item.get("url") or item.get("entryId")):
             continue
         output.append({
             "sourceTitle": str(item.get("title") or "公开音乐资料")[:180],
             "sourceUrl": str(item.get("url") or "")[:1000],
             "summary": str(item.get("summary") or "")[:1000],
             "searchProvider": str(item.get("provider") or "analysis-memory")[:40],
+            "ref": item.get("ref"),
             "inheritedFromAnalysisCard": True,
+            **{key: item[key] for key in ("entryId", "revision", "origin", "knowledgeType", "support", "evidenceKey", "evidenceUrl") if key in item},
         })
     return output
 
@@ -350,11 +356,18 @@ def assess_analysis_evidence(
         ) for source in sources)
         (covered if has_evidence else missing).append(dimension)
 
-    domains = {
-        urlparse(str(source.get("sourceUrl") or "")).hostname
-        for source in sources if source.get("sourceUrl")
-    }
-    domains.discard(None)
+    domains = set()
+    for source in sources:
+        if source.get("entryId"):
+            for support in source.get("support", []):
+                if support.get("relation") == "SUPPORTS":
+                    lineage = support.get("originGroup") or urlparse(str(support.get("sourceUrl") or "")).hostname or support.get("sourceId")
+                    if lineage:
+                        domains.add(str(lineage))
+        else:
+            host = urlparse(str(source.get("sourceUrl") or "")).hostname
+            if host:
+                domains.add(host)
     full_text_count = sum(1 for source in sources if len(str(source.get("pageExcerpt") or "").strip()) >= 120)
     requires_full_text = bool(re.search(
         r"创作背景|创作过程|创作语境|制作过程|制作语境|采访|幕后|制作人|编曲者|词曲作者|词曲署名|credits?|录音|混音|为什么写|怎么写",

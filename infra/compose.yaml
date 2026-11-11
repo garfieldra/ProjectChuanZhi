@@ -33,6 +33,7 @@ services:
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:-soundseek}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-soundseek}
+      KNOWLEDGE_MAINTAINERS: ${KNOWLEDGE_MAINTAINERS:-}
       AGENT_INTERNAL_BASE_URL: http://agent-service:8000
       APPLE_ITUNES_STOREFRONT: ${APPLE_ITUNES_STOREFRONT:-US}
       AGENT_INTERNAL_SERVICE_TOKEN: ${AGENT_INTERNAL_SERVICE_TOKEN}
@@ -90,8 +91,6 @@ services:
     depends_on:
       java-service:
         condition: service_healthy
-      milvus:
-        condition: service_started
     networks:
       - internal
       - public

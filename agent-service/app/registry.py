@@ -54,7 +54,7 @@ tool_registry = ToolRegistry([
     ToolDefinition("research_musicbrainz", "atomic", "读取作品版本、创作署名及规范实体关系", "CATALOG_RELATIONSHIP_FACT", 35, True),
     ToolDefinition("search_wikimedia", "atomic", "检索艺人、作品与音乐史背景的百科实体资料", "ENCYCLOPEDIA_CONTEXT", 15, True),
     ToolDefinition("search_lastfm", "atomic", "读取相似艺人、相似歌曲及听众标签信号", "LISTENER_SIMILARITY_SIGNAL", 15, True),
-    ToolDefinition("search_knowledge", "atomic", "检索本地歌曲主题与文化语境", "KNOWLEDGE_CARD", 10, True),
+    ToolDefinition("search_knowledge", "atomic", "检索人工审核的音乐事实、来源证据与主题解释", "VERIFIED_EVIDENCE", 10, True),
     ToolDefinition("verify_musicbrainz", "atomic", "核验歌曲和艺人的规范身份", "CATALOG_IDENTITY", 12, True),
     ToolDefinition("recommend_music", "composite", "从公开资料提取并核验普通歌曲与艺人推荐", "RECOMMENDATION", 180),
     ToolDefinition("build_candidate_pool", "composite", "构建并核验可确认的赛事候选池", "CANDIDATE_POOL", 900),

@@ -22,6 +22,7 @@ public class ConversationApplicationService {
   static final int AUTO_COMPRESSION_TURNS = 20;
   static final int EMERGENCY_COMPRESSION_TOKENS = 850_000;
   static final int RETAINED_RECENT_TURNS = 6;
+  @org.springframework.beans.factory.annotation.Autowired private com.soundseek.knowledge.KnowledgeService knowledge;
   private final ConversationRepository conversations;
   private final ConversationMessageRepository messages;
   private final ConversationAgentGateway agent;
@@ -180,8 +181,15 @@ public class ConversationApplicationService {
     return new Turn(user, run, false);
   }
 
+  private void validateKnowledge(ConversationAgentGateway.Result result) {
+    if(result.card()==null || knowledge==null)return;
+    try { knowledge.assertCardReferences(json.readValue(result.card().payloadJson(),new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>(){})); }
+    catch(java.io.IOException invalid){throw new IllegalArgumentException("CARD_JSON_INVALID");}
+  }
+
   @Transactional
   public ConversationMessage complete(UUID id, UUID runId, ConversationAgentGateway.Result result) {
+    validateKnowledge(result);
     var run = messages.findByConversationIdAndAgentRunIdAndType(id, runId, ConversationMessageType.AGENT_RUN).orElseThrow(NoSuchElementException::new);
     run.complete();
     messages.save(run);
@@ -190,6 +198,7 @@ public class ConversationApplicationService {
 
   @Transactional
   public ConversationMessage completeAfterResume(UUID id, UUID runId, ConversationAgentGateway.Result result) {
+    validateKnowledge(result);
     var run = messages.findByConversationIdAndAgentRunIdAndType(id, runId, ConversationMessageType.AGENT_RUN).orElseThrow(NoSuchElementException::new);
     run.complete();
     messages.save(run);

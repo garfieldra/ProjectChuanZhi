@@ -8,6 +8,8 @@ export type AuthSession = {
   githubEnabled: boolean
 }
 
+export const AUTH_SESSION_CHANGED_EVENT = 'soundseek:auth-session-changed'
+
 type AuthAction = 'session' | 'login' | 'register' | 'logout'
 
 export async function requestAuth(action: AuthAction, body?: object): Promise<AuthSession> {
@@ -26,6 +28,7 @@ export async function requestAuth(action: AuthAction, body?: object): Promise<Au
       throw new Error(data?.message || '账户服务暂时不可用，请稍后重试。')
     }
     if (!data || typeof data.authenticated !== 'boolean' || typeof data.githubEnabled !== 'boolean') throw new Error('未能确认账户状态，请稍后重试。')
+    if (action !== 'session' && typeof window !== 'undefined') window.dispatchEvent(new Event(AUTH_SESSION_CHANGED_EVENT))
     return data
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw new Error('账户连接超时，请稍后重试。')

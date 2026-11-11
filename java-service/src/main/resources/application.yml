@@ -1,3 +1,6 @@
+knowledge:
+  maintainers: ${KNOWLEDGE_MAINTAINERS:}
+
 server:
   forward-headers-strategy: framework
   servlet:
