@@ -1,6 +1,8 @@
 # RAG 浏览器验收记录
 
-验收日期：2026-11-10。使用当前 `feature/rag-knowledge-base` 分支源码，实际操作内置浏览器中的 `http://127.0.0.1:15173/#knowledge`。前端代理到独立的 Java、MySQL、Redis、RabbitMQ、Agent、知识 Worker 和 Milvus 2.4.23，未使用现有业务数据库。
+验收日期：2026-11-10。使用合并 SoundSeek 主干前的 `feature/rag-knowledge-base` 分支源码，实际操作内置浏览器中的 `http://127.0.0.1:15173/#knowledge`。前端代理到独立的 Java、MySQL、Redis、RabbitMQ、Agent、知识 Worker 和 Milvus 2.4.23，未使用现有业务数据库。
+
+本记录与截图保留当时界面。后续合并主干后的 Java/Agent/Web 结果见 [最新验证摘要](./rag-validation.md)，不能将本记录视为新版首页合并后的完整浏览器重验。
 
 ## 验收结果
 

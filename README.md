@@ -52,6 +52,17 @@ SoundSeek 不要求用户先填写标签或进入固定流程。用户可以直�
 
 设计与验收见 [我的音乐规格](Specs/04-功能规格/27-我的音乐歌曲保存与再次探索.md)。独立本地环境可运行 `python3 Demos/verify_saved_song_library.py`，该脚本会创建测试访客和账户，不调用模型。
 
+### 人工维护的音乐证据库
+
+- 维护者手动录入、导入 JSON/JSONL、整理 Markdown/TXT 或读取指定公开网页；模型辅助提取可选；
+- 草稿、审核、发布彼此独立，修改创建新版本，撤回立即阻止新检索使用；
+- 已核验作品/录音约束、精确与向量召回、Java 权威回查和稳定证据引用；
+- 发布前使用固定模型分词器校验完整文档，超过 480 token 时提示拆分；
+- 支持索引任务重试、对账、独立代次重建、验收后切换及回退；
+- 入口为 `/#knowledge` 或 `/explore#knowledge`，普通账户没有维护权限。
+
+资料来源由维护者主动选择；当前未启用自动收集。知识库补充事实、归因和解释，歌曲发现仍由公开网络与 MusicBrainz 完成。操作与兼容约定见 [RAG 维护说明](./docs/rag-maintenance.md)。
+
 ### 可选歌曲世界杯 Skill
 
 - 16/32 首单败淘汰赛；
@@ -84,12 +95,15 @@ flowchart LR
     J --> O[Transactional Outbox]
     O --> MQ[(RabbitMQ)]
     MQ --> AW[Agent Worker]
-    J --> A[Python Agent Service]
+    J -->|Agent 调用 / 发布前长度检查| A[Python Agent Service]
+    MQ --> KW[知识 Worker]
+    KW -->|向量化 / 版本化索引| V[(Milvus)]
+    A -->|知识版本与来源回查| J
 
     A --> L[DeepSeek / 可替换 LLM]
     A --> S[博查 / Tavily]
     A --> MB[MusicBrainz]
-    A -.补充语义证据.-> V[(Milvus)]
+    A -.补充语义证据.-> V
     A -.可选研究侧车.-> CN[知乎 / B站 / 豆瓣]
 
     AW --> J
@@ -106,8 +120,9 @@ flowchart LR
 | Java Service | REST API、会话与赛事领域模型、事务一致性、幂等、Agent Run 控制面、最终落库 |
 | Python Agent Service | LangGraph ReAct 决策、工具选择、候选池/报告等复合 Tool、结构化输出 |
 | Agent Worker | 消费异步任务、维护租约和心跳、回传事件及最终结果 |
+| 知识 Worker | 消费独立知识索引任务、嵌入、版本化写入/删除及租约回报 |
 | MySQL / Redis / RabbitMQ | 持久化、缓存与互斥、异步消息 |
-| Milvus | 已审核主题卡的语义检索增强；仅为 bonus，不是歌曲发现主链路 |
+| Milvus | 已发布事实与主题解释的可重建语义索引；结果必须回查 Java，不是歌曲发现主链路 |
 
 ## Agent 设计
 
@@ -123,7 +138,7 @@ flowchart LR
 ```text
 公开网络发现 → MusicBrainz 身份核验 → Java 规范化与去重 → 推荐卡 / 候选池 / 赛事
                               ↑
-                Milvus 仅补充主题和文化语境
+                人工审核的事实、归因和主题材料补充解释
 ```
 
 ## 数据与外部服务
@@ -137,7 +152,7 @@ flowchart LR
 | Apple iTunes Search | 可用时补充试听与播放信息 | 否 |
 | 网易云音乐 | 显式平台搜索跳转，不调用非公开 API | 否 |
 | 知乎 / B站 / 豆瓣 | 受控研究侧车，补充创作背景与文化语境 | 可选 |
-| Milvus 主题卡 | 本地已审核知识的语义补充 | 可选 bonus |
+| 人工知识库 / Milvus | 已发布事实、归因观点、文化语境与主题解释，权威状态在 MySQL | 可选增强 |
 
 任何 API Key 只由服务端环境变量管理，不进入仓库、日志、SSE 或模型上下文。项目不保存和分发完整受版权保护的音频。
 
@@ -167,6 +182,7 @@ ProjectChuanZhi/
 ├── douban-research/      # 可选豆瓣公开内容研究侧车
 ├── infra/                # 本地/生产 Compose 与可观测性配置
 ├── Demos/                # 数据处理、模块验证和端到端验收脚本
+├── docs/                 # 当前设计、维护、品牌及验证记录
 └── Specs/                # 产品、数据、架构和功能规格
 ```
 
@@ -207,7 +223,7 @@ docker compose --env-file .env -f infra/compose.yaml up -d --build \
   web agent-service agent-worker
 ```
 
-Compose 会自动启动这些服务依赖的 Java、MySQL、Redis、RabbitMQ、Milvus、etcd 和 MinIO。
+Compose 会自动启动 Java、MySQL、Redis、RabbitMQ，以及当前 `agent-worker` 仍声明依赖的旧 Milvus、etcd 和 MinIO。音乐证据型 RAG 使用下面单独启用的 `knowledge-milvus`，不将旧集合直接作为正式知识库。
 
 ### 3. 检查服务
 
@@ -230,7 +246,18 @@ docker compose --env-file .env -f infra/compose.yaml exec agent-service \
   curl -fsS http://localhost:8000/health/ready
 ```
 
-### 4. 可选：启用国内内容研究侧车
+### 4. 可选：启用人工知识库
+
+在 `.env` 中设置 `KNOWLEDGE_MAINTAINERS` 为已注册维护者的邮箱，然后使用知识组件叠加配置启动：
+
+```bash
+docker compose --env-file .env -f infra/compose.yaml -f infra/compose.knowledge.yaml \
+  --profile knowledge up -d --build web agent-service agent-worker knowledge-worker
+```
+
+浏览器访问 `http://localhost:5173/#knowledge`。默认维护者名单为空；登录/退出后，页面会重新查询服务端维护权限。新知识库使用独立数据卷，模型缓存需持久保留。Java 包、知识队列及新集合已统一使用 `soundseek`；数据库迁移为主干 V23 收藏表 → V24 知识库 → V25 固定模型修订。已有旧版 RAG 试验库的兼容要求见 [维护说明](./docs/rag-maintenance.md)。
+
+### 5. 可选：启用国内内容研究侧车
 
 先在 `.env` 中开启对应的 `*_RESEARCH_ENABLED` 配置；知乎还需要 `ZHIHU_ACCESS_SECRET`。然后执行：
 
@@ -242,13 +269,13 @@ docker compose --env-file .env -f infra/compose.yaml \
 
 这些侧车不会对宿主机开放端口，也不是完成普通推荐所必需的依赖。
 
-### 5. 停止服务
+### 6. 停止服务
 
 ```bash
 docker compose --env-file .env -f infra/compose.yaml down
 ```
 
-默认不会删除数据卷。只有明确需要清空本地数据时，才额外使用 `down -v`。
+若启动时启用了知识组件，停止时也带上 `-f infra/compose.knowledge.yaml --profile knowledge`，保持同一 Compose 项目和配置。默认不会删除数据卷；只有明确需要清空对应环境数据时才额外使用 `down -v`。
 
 ## 测试与验收
 
@@ -297,7 +324,9 @@ python3 Demos/verify_music_providers.py
 
 音乐证据型 RAG 支持维护者导入资料、人工审核发布、版本更新与撤回，以及统一 Agent 按需检索和引用。自动收集只预留候选提交契约，当前不启用。知识库不会替代在线歌曲发现与 MusicBrainz 核验。
 
-启动可选知识服务、维护者权限、资料格式及验收方法见 [RAG 维护说明](./docs/rag-maintenance.md)；完整方案见 [RAG 设计](./docs/rag-design.md)，测试范围见 [验收记录](./docs/rag-validation.md)。默认没有维护者权限，需在服务端配置 `KNOWLEDGE_MAINTAINERS`。
+启动可选知识服务、维护者权限、资料格式及验收方法见 [RAG 维护说明](./docs/rag-maintenance.md)；完整方案见 [RAG 设计](./docs/rag-design.md)，测试范围见 [验收记录](./docs/rag-validation.md)。默认没有维护者权限，需在服务端配置 `KNOWLEDGE_MAINTAINERS`。浏览器操作、截图及修复结果见 [浏览器验收记录](./docs/rag-browser-acceptance.md)。
+
+截至 2026-11-10，合并 `main@d317353` 后的回归为 **Java 51 项、Agent 124 项、Web 66 项通过**，前端生产构建与 Compose 配置检查通过。浏览器验收使用合成材料；这些结果不代表真实音乐语料的检索质量指标已达标，也不代表已经部署到公网。
 
 ## 当前实现与边界
 
