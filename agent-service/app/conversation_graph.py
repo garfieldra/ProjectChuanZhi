@@ -1,4 +1,5 @@
 from __future__ import annotations
+from .document_input import DocumentInputError, read_document, validate_document_citations
 from .image_input import ImageInputBudgetError, multimodal_prompt
 
 import asyncio
@@ -37,9 +38,13 @@ from .music_analysis import (
 
 
 class ConversationDecision(BaseModel):
-    action: Literal["search_web", "read_source", "research_musicbrainz", "search_wikimedia", "search_lastfm", "search_knowledge", "recommend_music", "analyze_music", "clarify", "propose_tournament", "build_candidate_pool", "generate_exploration_report", "respond"]
+    action: Literal["read_document", "search_document", "search_web", "read_source", "research_musicbrainz", "search_wikimedia", "search_lastfm", "search_knowledge", "recommend_music", "analyze_music", "clarify", "propose_tournament", "build_candidate_pool", "generate_exploration_report", "respond"]
     public_summary: str = Field(min_length=4, max_length=100)
     query: str | None = Field(default=None, max_length=300)
+    attachment_id: str | None = Field(default=None, max_length=36)
+    document_page: int = Field(default=1, ge=1)
+    document_count: int = Field(default=1, ge=1, le=3)
+    document_offset: int = Field(default=0, ge=0)
     source_ref: str | None = Field(default=None, max_length=20)
     entity_type: Literal["artist", "recording", "release-group", "work"] = "recording"
     entity_mbid: str | None = Field(default=None, max_length=60)
@@ -314,6 +319,7 @@ class ConversationReActRuntime:
             "webSourceCount": len(state.get("web_sources", [])),
             "knowledgeCount": len(state.get("knowledge", [])),
             "iteration": state.get("iteration", 0),
+            "documentObservations": [item for item in state.get("observations", []) if item.get("action") in {"read_document", "search_document"}],
             "researchAssessment": state.get("research_assessment", {}),
             "entityResolutions": state.get("entity_resolutions", []),
             "preferenceProfile": state.get("preference_profile", {}),
@@ -334,6 +340,8 @@ class ConversationReActRuntime:
         prompt = f"""你是 SoundSeek 对话运行时的 ReAct 决策器，不输出思维链。
 你是统一音乐探索 Agent，也支持用户直接上传图片进行通用图像问答。仅上传图片而没有文字时，先客观描述可见内容，不必先澄清音乐偏好；图片与音乐无关本身不构成阻塞理由。世界杯是可选 Skill，不是产品主流程；候选池构建、赛事分析和报告撰写是可调用的复合 Tool，而不是独立 Agent。
 你只能选择一个动作：
+- read_document：根据用户问题读取上传文档的指定页/片段，填写attachment_id、document_page、document_count（1至3）、document_offset（通常0；同页超长时使用nextOffset）；
+- search_document：在用户上传文档内按关键词搜索，填写attachment_id与query，结果为摘录，需要完整上下文可继续read_document。仅在需要时自主使用，不把上传资料问题默认送去联网；
 - search_web：问题需要当前公开音乐资料、外部事实或具体推荐线索；用户要求推荐、相似艺人/歌曲或风格延展时，应先搜索再回答，除非当前观察中已有足够公开资料；
 - read_source：已有搜索来源，但摘要不足以支持创作背景、采访、制作署名或关键事实时，选择最有价值的来源精读；在 source_ref 填写 analysisSources 中的 S1、S2 等引用。不要重复读取 readSourceRefs 中的来源；
 - research_musicbrainz：需要核对作品/录音版本、ISRC、发行、创作署名、合作人员或规范实体关系时使用。entity_type 选择 artist、recording、release-group 或 work；已知 MBID 时填写 entity_mbid，否则必须尽量把 artist_name 与 track_title 分开填写，query 只作为补充；它提供目录事实，不替代乐评与采访；
@@ -364,6 +372,12 @@ class ConversationReActRuntime:
             decision = await self.model.with_structured_output(ConversationDecision, method="function_calling").ainvoke(await multimodal_prompt(prompt, request))
         except Exception:
             return _fallback_decision(state)
+        # Document reading is governed by the same Supervisor. Uploaded source
+        # questions do not require the music-only public-research guardrail.
+        if decision.action in {"read_document", "search_document"}:
+            return decision
+        if decision.action == "respond" and request.document_attachments and not _recommendation_intent(request):
+            return decision
         analysis_mode = bool(state.get("analysis_workspace")) or deep_analysis_intent(request)
         coverage = state.get("evidence_coverage", {})
         fact_heavy = bool(coverage.get("requires_full_text"))
@@ -511,7 +525,7 @@ class ConversationReActRuntime:
         if action == "build_candidate_pool":
             return "我会直接开始构建候选池：先在线发现相关作品，再以 MusicBrainz 核验歌曲身份；候选池完成后仍由你确认才会开赛。"
         if self.model is None:
-            return "图片理解服务尚未配置，请稍后重试。" if request.image_attachments else _fallback_answer(state)
+            return "附件理解服务尚未配置，请稍后重试。" if (request.image_attachments or request.document_attachments) else _fallback_answer(state)
         sources = [{"title": item.get("sourceTitle"), "summary": item.get("summary"), "url": item.get("sourceUrl")} for item in state.get("web_sources", [])[:10]]
         knowledge = state.get("knowledge", [])[:6]
         prompt = f"""你是 SoundSeek 的音乐探索 Agent，也支持通用图像问答。用户只上传图片时先描述可见内容，不要求用户先补充音乐偏好，不为无关图片强行联想音乐。用中文自然、克制地回答，不输出思维链。
@@ -526,10 +540,10 @@ class ConversationReActRuntime:
         try:
             response = await self.model.ainvoke(await multimodal_prompt(prompt, request))
             return str(response.content).strip()
-        except ImageInputBudgetError as error:
+        except (ImageInputBudgetError, DocumentInputError) as error:
             return str(error)
         except Exception:
-            return "图片暂时无法读取或理解，请稍后重新发送。" if request.image_attachments else _fallback_answer(state)
+            return "附件暂时无法读取或理解，请稍后重新发送。" if (request.image_attachments or request.document_attachments) else _fallback_answer(state)
 
     async def analyze_music(self, state: ConversationState) -> ConversationAgentResult:
         """Produce an evidence-bounded analysis from the mutable workspace.
@@ -858,7 +872,7 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
                 incoming = sorted(incoming, key=lambda item: int(item.get("sequenceNumber", 0)))
                 applied_sequence = max(int(item.get("sequenceNumber", 0)) for item in incoming)
                 contents = [str(item.get("content") or "").strip() for item in incoming if str(item.get("content") or "").strip()]
-                request = _request_with_interventions(request, contents, [attachment_id for item in incoming for attachment_id in (item.get("attachmentIds") or [])])
+                request = _request_with_interventions(request, contents, [attachment_id for item in incoming for attachment_id in (item.get("attachmentIds") or [])], [attachment for item in incoming for attachment in (item.get("attachments") or [])])
                 revision += 1
                 iteration = 0
                 intervention_history = [{
@@ -900,6 +914,22 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
         async def execute(state: ConversationState):
             action = state["decision"].action
             request = state["request"]
+            if action in {"read_document", "search_document"}:
+                decision = state["decision"]
+                try:
+                    if not decision.attachment_id:
+                        raise DocumentInputError("请指定当前会话中的附件。")
+                    if action == "search_document" and not (decision.query or "").strip():
+                        raise DocumentInputError("文档搜索需要具体关键词。")
+                    result = await read_document(request, decision.attachment_id, decision.document_page,
+                        decision.document_count, decision.document_offset, decision.query if action == "search_document" else None)
+                    status = result.get("status", "success")
+                    # Keep the next observation bounded and public-safe; source text remains private.
+                    summary = {"action": action, "status": status, "pageNumbers": [page["number"] for page in result.get("pages", [])],
+                        "message": result.get("message", "已读取上传资料的相关范围"), "hasMore": result.get("hasMore", False)}
+                except (DocumentInputError, ValueError):
+                    summary = {"action": action, "status": "unavailable", "message": "当前文档范围无法读取，请检查附件和页码或使用已有资料。"}
+                return {"request": request, "observations": state.get("observations", []) + [summary]}
             if action == "search_web":
                 query = state["decision"].query or request.user_message
                 if _recommendation_followup(request):
@@ -1130,7 +1160,7 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
 
         async def finalize(state: ConversationState, action: str):
             request = state["request"]
-            text = await self.answer(state, action)
+            text = validate_document_citations(await self.answer(state, action), request)
             card = None
             if action == "propose_tournament":
                 card = ConversationCardIntent(
@@ -2135,7 +2165,7 @@ def _bounded_text(value: str, limit: int) -> str:
     return value if len(value) <= limit else value[: max(0, limit - 1)].rstrip() + "…"
 
 
-def _request_with_interventions(request: ConversationAgentRequest, contents: list[str], attachment_ids: list[str] | None = None) -> ConversationAgentRequest:
+def _request_with_interventions(request: ConversationAgentRequest, contents: list[str], attachment_ids: list[str] | None = None, attachment_metadata: list[dict] | None = None) -> ConversationAgentRequest:
     active = list(dict.fromkeys([*request.active_interventions, *contents]))[-12:]
     base = request.user_message.split("\n\n[运行中方向调整]", 1)[0].strip()
     effective = _bounded_text(base, 1200)
@@ -2144,15 +2174,22 @@ def _request_with_interventions(request: ConversationAgentRequest, contents: lis
             f"{index}. {_bounded_text(content, 500)}" for index, content in enumerate(active, start=1)
         )
     recent = [*request.recent_messages, *({"role": "USER", "content": content} for content in contents)]
+    metadata = {str(item["id"]): item for item in (attachment_metadata or [])}
+    new_images, new_documents = [], []
+    for value in attachment_ids or []:
+        item = metadata.get(str(value), {"id": str(value)})
+        (new_documents if item.get("kind") in {"PDF", "TEXT"} else new_images).append(item)
     return request.model_copy(update={
         "user_message": _bounded_text(effective, 2000),
         "active_interventions": active,
-        "image_attachments": list({str(item["id"]):item for item in [*request.image_attachments,*({"id":str(value)} for value in (attachment_ids or []))]}.values()),
-        "recent_messages": (recent + ([{"role": "USER", "content": "运行中补充的图片", "attachmentIds": attachment_ids}] if attachment_ids else []))[-1000:],
+        "image_attachments": list({str(item["id"]):item for item in [*request.image_attachments, *new_images]}.values()),
+        "document_attachments": list({str(item["id"]): item for item in [*request.document_attachments, *new_documents]}.values()),
+        "recent_messages": (recent + ([{"role": "USER", "content": "运行中补充的附件", "attachmentIds": attachment_ids}] if attachment_ids else []))[-1000:],
     })
 
 
 def _add_intervention_trace(result: ConversationAgentResult, state: ConversationState) -> None:
+    result.text = validate_document_citations(result.text, state["request"])
     result.trace_summary = {
         **result.trace_summary,
         "appliedInterventionSequence": state.get("applied_intervention_sequence", 0),

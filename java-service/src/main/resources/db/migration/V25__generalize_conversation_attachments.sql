@@ -1,0 +1,7 @@
+RENAME TABLE image_attachment TO conversation_attachment;
+ALTER TABLE conversation_attachment
+ ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'IMAGE',
+ ADD COLUMN parse_status VARCHAR(16) NOT NULL DEFAULT 'READY',
+ ADD COLUMN page_count INT NOT NULL DEFAULT 0,
+ ADD COLUMN text_length INT NOT NULL DEFAULT 0,
+ ADD COLUMN warning VARCHAR(500) NOT NULL DEFAULT '';

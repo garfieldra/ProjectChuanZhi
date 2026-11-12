@@ -1,3 +1,4 @@
+import {DocumentCitation} from './DocumentPreview'
 import {ImageAttachments,ImageUploadButton,MessageImages,useImageAttachments} from './ImageAttachmentStrip'
 import { MusicLibrary } from './MusicLibraryPanel'
 import { MusicLibraryProvider, useMusicLibrary, SaveSongButton, type SavedSong } from './musicLibraryStore'
@@ -448,7 +449,7 @@ export function MessageBody({ content }: { content: string }) {
     else paragraph.push(line)
   }
   flush()
-  const inline = (text: string) => text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => part.startsWith('**') && part.endsWith('**') ? <strong key={index}>{part.slice(2, -2)}</strong> : <span key={index}>{part}</span>)
+  const inline = (text: string) => text.split(/(\*\*[^*]+\*\*|\[文档:[0-9a-fA-F-]{36}:\d+\])/g).map((part, index) => part.startsWith('[文档:') ? <DocumentCitation key={index} token={part} /> : part.startsWith('**') && part.endsWith('**') ? <strong key={index}>{part.slice(2, -2)}</strong> : <span key={index}>{part}</span>)
   return <div className="message-body">{blocks.map((block, index) => block.heading ? <h3 key={index}>{inline(block.text)}</h3> : <p key={index}>{inline(block.text)}</p>)}</div>
 }
 

@@ -49,6 +49,8 @@ class SkillRegistry:
 
 
 tool_registry = ToolRegistry([
+    ToolDefinition("read_document", "atomic", "按页读取当前会话上传文档，保留来源位置", "USER_DOCUMENT", 20, True),
+    ToolDefinition("search_document", "atomic", "在当前会话上传文档中查找关键词与原页摘录", "USER_DOCUMENT_EXCERPT", 20, True),
     ToolDefinition("search_web", "atomic", "从公开资料发现音乐线索", "PUBLIC_SOURCE", 15, True),
     ToolDefinition("read_source", "atomic", "安全精读已发现的公开页面并提取正文证据", "PUBLIC_SOURCE_EXCERPT", 10, True),
     ToolDefinition("research_musicbrainz", "atomic", "读取作品版本、创作署名及规范实体关系", "CATALOG_RELATIONSHIP_FACT", 35, True),

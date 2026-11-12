@@ -10,7 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AgentRunFollowUpApplicationService {
-  @org.springframework.beans.factory.annotation.Autowired private com.soundseek.attachments.ImageAttachmentService attachments;
+  @org.springframework.beans.factory.annotation.Autowired private com.soundseek.attachments.AttachmentService attachments;
   private final AgentRunRepository runs;
   private final AgentRunFollowUpRepository followUps;
   private final AgentRunApplicationService agentRuns;

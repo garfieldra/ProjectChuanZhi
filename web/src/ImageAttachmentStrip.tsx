@@ -6,6 +6,8 @@ import {
   validateImageFiles,
   type ImageAttachment,
 } from './imageAttachmentApi'
+import { DocumentPreview } from './DocumentPreview'
+import { attachmentKind } from './imageAttachmentApi'
 import './imageAttachments.css'
 
 export function useImageAttachments() {
@@ -55,7 +57,7 @@ export function useImageAttachments() {
       setImages((previous) =>
         previous.map((image) =>
           image.id === localId
-            ? { ...image, id: result.id, status: 'ready' }
+            ? { ...image, ...result, byteSize: image.byteSize, status: 'ready' }
             : image,
         ),
       )
@@ -69,10 +71,10 @@ export function useImageAttachments() {
                   ...image,
                   status: 'error',
                   error: timedOut
-                    ? '图片上传超时，请重试。'
+                    ? '附件处理超时，请重试。'
                     : reason instanceof Error
                       ? reason.message
-                      : '图片上传失败。',
+                      : '附件处理失败。',
                 }
               : image,
           ),
@@ -94,7 +96,7 @@ export function useImageAttachments() {
         signal: controller.signal,
       })
       if (!response.ok || controller.signal.aborted || disposed.current)
-        throw new Error('暂时无法连接图片上传服务。')
+        throw new Error('暂时无法连接附件上传服务。')
     } finally {
       clearTimeout(timeout)
       controllers.current.delete(key)
@@ -116,6 +118,7 @@ export function useImageAttachments() {
           url,
           fileName: file.name,
           byteSize: file.size,
+          kind: attachmentKind(file),
           status: 'uploading' as const,
         }
       })
@@ -133,7 +136,7 @@ export function useImageAttachments() {
                 ? {
                     ...image,
                     status: 'error',
-                    error: '暂时无法连接图片上传服务，请重试。',
+                    error: '暂时无法连接附件上传服务，请重试。',
                   }
                 : image,
             ),
@@ -145,7 +148,7 @@ export function useImageAttachments() {
       )
     } catch (reason) {
       if (!disposed.current)
-        setError(reason instanceof Error ? reason.message : '无法添加图片。')
+        setError(reason instanceof Error ? reason.message : '无法添加附件。')
     }
   }
 
@@ -215,7 +218,7 @@ export function ImageUploadButton({
       <input
         ref={input}
         type="file"
-        accept="image/jpeg,image/png,image/webp"
+        accept="image/jpeg,image/png,image/webp,.txt,.md,.markdown,.pdf"
         multiple
         hidden
         onChange={(event) => {
@@ -226,7 +229,7 @@ export function ImageUploadButton({
       <button
         className="image-upload-button"
         type="button"
-        aria-label="添加图片"
+        aria-label="添加附件"
         disabled={disabled}
         onClick={() => input.current?.click()}
       >
@@ -251,6 +254,8 @@ export function ImageAttachments({
   const [expanded, setExpanded] = useState(false),
     [preview, setPreview] = useState<ImageAttachment | null>(null)
   const dialog = useRef<HTMLDialogElement>(null)
+  const [documentPreview, setDocumentPreview] =
+    useState<ImageAttachment | null>(null)
   useEffect(() => {
     if (preview) {
       dialog.current?.showModal()
@@ -258,7 +263,10 @@ export function ImageAttachments({
     }
   }, [preview])
   useEffect(() => {
-    if (images.length === 0) { setExpanded(false); setPreview(null) }
+    if (images.length === 0) {
+      setExpanded(false)
+      setPreview(null)
+    }
   }, [images.length])
   const layout = thumbnailLayout(images, expanded)
   if (!images.length) return null
@@ -266,11 +274,11 @@ export function ImageAttachments({
     <div className="image-attachments">
       <div
         className="image-thumbnail-row"
-        aria-label={`已添加${images.length}张图片`}
+        aria-label={`已添加${images.length}个附件`}
       >
         {layout.visible.map((image, index) => (
           <div
-            className="image-thumbnail"
+            className={`image-thumbnail ${image.kind && image.kind !== 'IMAGE' ? 'file-thumbnail' : ''}`}
             key={image.id}
             data-status={image.status}
           >
@@ -279,16 +287,40 @@ export function ImageAttachments({
               className="image-thumbnail-open"
               aria-label={
                 index === 2 && layout.hidden
-                  ? `展开全部${images.length}张图片`
-                  : `预览图片：${image.fileName}`
+                  ? `展开全部${images.length}个附件`
+                  : image.kind && image.kind !== 'IMAGE'
+                    ? `预览文件：${image.fileName}`
+                    : `预览图片：${image.fileName}`
               }
               onClick={() =>
                 index === 2 && layout.hidden
                   ? setExpanded(true)
-                  : setPreview(image)
+                  : image.kind && image.kind !== 'IMAGE'
+                    ? image.status === 'ready' && setDocumentPreview(image)
+                    : setPreview(image)
               }
             >
-              <img src={image.url} alt={image.fileName} />
+              {image.kind && image.kind !== 'IMAGE' ? (
+                <span className="file-tile" title={image.fileName}>
+                  <span className="file-type">
+                    {image.kind === 'PDF'
+                      ? 'PDF'
+                      : /\.md|\.markdown$/i.test(image.fileName)
+                        ? 'MD'
+                        : 'TXT'}
+                  </span>
+                  <strong>{image.fileName}</strong>
+                  <small>
+                    {image.status === 'uploading'
+                      ? '上传/解析中'
+                      : image.pageCount
+                        ? `${image.pageCount}${image.kind === 'PDF' ? '页' : '个片段'}`
+                        : '文档'}
+                  </small>
+                </span>
+              ) : (
+                <img src={image.url} alt={image.fileName} />
+              )}
               {index === 2 && layout.hidden > 0 && (
                 <span className="image-overflow-count">+{layout.hidden}</span>
               )}
@@ -298,7 +330,7 @@ export function ImageAttachments({
                 className="image-remove"
                 type="button"
                 disabled={disabled}
-                aria-label={`移除图片：${image.fileName}`}
+                aria-label={`移除${image.kind && image.kind !== 'IMAGE' ? '附件' : '图片'}：${image.fileName}`}
                 onClick={() => onRemove(image.id)}
               >
                 ×
@@ -306,7 +338,7 @@ export function ImageAttachments({
             )}
             {image.status === 'uploading' && (
               <span className="image-upload-state" role="status">
-                上传中
+                {image.kind && image.kind !== 'IMAGE' ? '解析中' : '上传中'}
               </span>
             )}
             {image.status === 'error' && (
@@ -329,13 +361,33 @@ export function ImageAttachments({
           type="button"
           onClick={() => setExpanded(false)}
         >
-          收起图片
+          收起附件
         </button>
       )}
       {images.some((image) => image.status === 'error') && (
         <p className="image-error" role="alert">
-          有图片上传失败，请重试或移除后发送。
+          {images
+            .filter((image) => image.status === 'error')
+            .map(
+              (image) =>
+                `${image.fileName}：${image.error || '附件处理失败，请重试或移除后发送。'}`,
+            )
+            .join('；')}
         </p>
+      )}
+      {images.some((image) => image.warning) && (
+        <p className="attachment-warning" role="status">
+          {images
+            .filter((image) => image.warning)
+            .map((image) => `${image.fileName}：${image.warning}`)
+            .join('；')}
+        </p>
+      )}
+      {documentPreview && (
+        <DocumentPreview
+          id={documentPreview.id}
+          onClose={() => setDocumentPreview(null)}
+        />
       )}
       {preview && (
         <dialog
@@ -361,15 +413,40 @@ export function ImageAttachments({
   )
 }
 export function MessageImages({ ids }: { ids?: string[] }) {
-  return (
-    <ImageAttachments
-      images={(ids || []).map((id, index) => ({
-        id,
-        fileName: `图片${index + 1}`,
-        url: `/api/v1/attachments/${id}/content`,
-        status: 'ready',
-        byteSize: 0,
-      }))}
-    />
-  )
+  const [images, setImages] = useState<ImageAttachment[]>([])
+  const [failed, setFailed] = useState(false)
+  const key = (ids || []).join(',')
+  useEffect(() => {
+    const controller = new AbortController()
+    setImages([])
+    setFailed(false)
+    if (!key) return () => controller.abort()
+    void Promise.all(
+      key.split(',').map(async (id) => {
+        const response = await apiFetch(`/api/v1/attachments/${id}`, {
+          signal: controller.signal,
+        })
+        if (!response.ok) throw new Error('附件不可用')
+        const meta = await response.json()
+        return {
+          ...meta,
+          url: `/api/v1/attachments/${id}/content`,
+          status: 'ready',
+        } as ImageAttachment
+      }),
+    )
+      .then(setImages)
+      .catch(() => {
+        if (!controller.signal.aborted) setFailed(true)
+      })
+    return () => controller.abort()
+  }, [key])
+  if (failed) return <p className="image-error">附件不可用或已失效。</p>
+  if (key && !images.length)
+    return (
+      <p className="attachment-loading" role="status">
+        正在读取附件…
+      </p>
+    )
+  return <ImageAttachments images={images} />
 }

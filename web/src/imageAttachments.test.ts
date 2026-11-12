@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  attachmentKind,
   thumbnailLayout,
   validateImageFiles,
   MAX_IMAGE_BYTES,
@@ -34,12 +35,26 @@ describe('image attachment selection', () => {
     expect(() => validateImageFiles([file('image/svg+xml')], [])).toThrow('JPG')
     expect(() =>
       validateImageFiles([file('image/png', MAX_IMAGE_BYTES + 1)], []),
-    ).toThrow('8MB')
+    ).toThrow('8MiB')
     expect(() =>
       validateImageFiles(
         Array.from({ length: 11 }, () => file('image/png')),
         [],
       ),
-    ).toThrow('10张')
+    ).toThrow('10个')
+  })
+})
+
+describe('mixed document selection', () => {
+  it('accepts typed and extension-only documents alongside images', () => {
+    const files = [
+      { name: '资料.txt', type: 'text/plain', size: 100 },
+      { name: 'notes.md', type: '', size: 100 },
+      { name: 'source.PDF', type: 'application/pdf', size: 100 },
+      { name: 'photo.png', type: 'image/png', size: 100 },
+    ] as File[]
+    expect(files.map(attachmentKind)).toEqual(['TEXT', 'TEXT', 'PDF', 'IMAGE'])
+    expect(() => validateImageFiles(files, [])).not.toThrow()
+    expect(thumbnailLayout(files).hidden).toBe(1)
   })
 })

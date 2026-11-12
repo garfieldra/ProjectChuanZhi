@@ -1,7 +1,7 @@
 package com.soundseek.agent.application;
 import com.fasterxml.jackson.databind.ObjectMapper; import com.soundseek.agent.domain.*; import com.soundseek.agent.repository.*; import java.util.*; import org.springframework.stereotype.Service; import org.springframework.transaction.annotation.Transactional;
 @Service public class AgentRunApplicationService {
- @org.springframework.beans.factory.annotation.Autowired private com.soundseek.attachments.ImageAttachmentService attachments;
+ @org.springframework.beans.factory.annotation.Autowired private com.soundseek.attachments.AttachmentService attachments;
  private final AgentRunRepository runs; private final AgentRunEventRepository events; private final AgentRunAttemptRepository attempts; private final AgentRunInterventionRepository interventions; private final ObjectMapper json; private final AgentRunMetrics metrics;
  public AgentRunApplicationService(AgentRunRepository runs,AgentRunEventRepository events,AgentRunAttemptRepository attempts,AgentRunInterventionRepository interventions,ObjectMapper json,AgentRunMetrics metrics){this.runs=runs;this.events=events;this.attempts=attempts;this.interventions=interventions;this.json=json;this.metrics=metrics;}
  @Transactional public AgentRun create(UUID runId,UUID guestSessionId,UUID conversationId,AgentRunType runType){return runs.save(AgentRun.create(runId,guestSessionId,conversationId,runType));}

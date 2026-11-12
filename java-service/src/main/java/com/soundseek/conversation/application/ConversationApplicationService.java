@@ -17,7 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ConversationApplicationService {
-  @org.springframework.beans.factory.annotation.Autowired private com.soundseek.attachments.ImageAttachmentService attachments;
+  @org.springframework.beans.factory.annotation.Autowired private com.soundseek.attachments.AttachmentService attachments;
   static final int PROVIDER_CONTEXT_WINDOW_TOKENS = 1_000_000;
   static final int WORKING_CONTEXT_BUDGET_TOKENS = 850_000;
   static final int AUTO_COMPRESSION_TURNS = 20;
@@ -313,10 +313,14 @@ public class ConversationApplicationService {
     body.put("agentRunId", runId);
     body.put("conversationId", conversationId);
     body.put("guestId", guestId.toString());
-    body.put("userMessage", content.isBlank()?"请描述我本轮上传图片中的可见内容。先客观描述图片，不必先询问音乐偏好。":content);
+    body.put("userMessage", content.isBlank()?"请概括我本轮上传附件的内容；图片描述可见内容，文档概括资料并引用原文位置。不必先询问音乐偏好。":content);
     var imageIds=messages.findByConversationIdOrderBySequenceNumberAsc(conversationId).stream().flatMap(message->message.getAttachmentIds().stream()).distinct().toList();
-    if(imageIds.size()>64)throw new IllegalArgumentException("图片上下文超过64张，请在新对话中继续。");
-    if(!imageIds.isEmpty())body.put("imageAttachments",attachments.references(guestId,conversationId,imageIds));
+    if(imageIds.size()>64)throw new IllegalArgumentException("附件上下文超过64个，请在新对话中继续。");
+    if(!imageIds.isEmpty()) {
+      var references=attachments.references(guestId,conversationId,imageIds);
+      body.put("imageAttachments",references.stream().filter(item->"IMAGE".equals(item.get("kind"))).toList());
+      body.put("documentAttachments",references.stream().filter(item->!"IMAGE".equals(item.get("kind"))).toList());
+    }
     body.put("summary", summary == null ? "" : summary);
     body.put("recentMessages", history);
     body.put("recentCards", cards);

@@ -7,6 +7,7 @@ from uuid import UUID
 import httpx
 from langchain_core.messages import HumanMessage
 
+from .document_input import document_context
 from .schemas import ConversationAgentRequest
 from .settings import settings
 
@@ -16,7 +17,10 @@ class ImageInputBudgetError(ValueError):
 
 
 async def multimodal_prompt(prompt: str, request: ConversationAgentRequest | None = None):
-    if request is None or not request.image_attachments:
+    if request is None:
+        return prompt
+    prompt += await document_context(request)
+    if not request.image_attachments:
         return prompt
     images = request.image_attachments
     if len(images) > 64:

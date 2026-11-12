@@ -18,6 +18,8 @@ JAVA = settings.java_internal_base_url.rstrip("/")
 HEADERS = {"Authorization": f"Bearer {settings.agent_internal_service_token}"}
 
 _PUBLIC_TOOLS = {
+    "read_document": ("上传文档阅读", "tool"),
+    "search_document": ("文档内容搜索", "tool"),
     "understand_preference": ("偏好理解子任务", "subagent"),
     "resolve_named_entities": ("艺人身份解析", "tool"),
     "search_catalog": ("规范歌曲目录", "tool"),
@@ -194,7 +196,7 @@ async def execute(message: aio_pika.IncomingMessage):
                         resume_kind = "ARTIST_IDENTITY" if card.get("cardType") == "ARTIST_IDENTITY" else "GENERAL_CLARIFICATION"
                         snapshot = {
                             "resumeKind": resume_kind,
-                            "originalRequest": task["input"],
+                            "originalRequest": state.get("request", request).model_dump(by_alias=True, mode="json"),
                             "preferenceText": card.get("payload", {}).get("preferenceText", request.user_message),
                             "poolSize": card.get("payload", {}).get("poolSize", 32),
                         }

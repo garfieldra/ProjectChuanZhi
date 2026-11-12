@@ -13,6 +13,12 @@ describe('long conversation answer rendering', () => {
     expect(html).toContain('<p><span>开场。</span></p><h3><span>编曲</span></h3>')
     expect(html).toContain('<strong>钢琴</strong>')
   })
+  it('renders document references as source controls without exposing internal tokens', () => {
+    const html = renderToStaticMarkup(<MessageBody content={'依据文件[文档:10000000-0000-4000-8000-000000000001:2]。'} />)
+    expect(html).toContain('document-citation')
+    expect(html).not.toContain('[文档:')
+    expect(html).not.toContain('10000000-0000')
+  })
   it('preserves the entire answer and escapes untrusted markup', () => {
     const content = '分析内容。'.repeat(2000) + '<script>unsafe()</script>'
     const html = renderToStaticMarkup(<MessageBody content={content} />)

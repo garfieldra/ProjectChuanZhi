@@ -57,6 +57,8 @@ conversation_runtime = ConversationReActRuntime(
 )
 
 _ACTION_PROGRESS = {
+    "read_document": ("read_document", "正在阅读上传文档的相关页"),
+    "search_document": ("search_document", "正在上传文档中查找相关内容"),
     "adjust_direction": ("direction_update", "正在根据你的补充调整计划"),
     "understand_preference": ("understand_preference", "正在理解你的音乐偏好"),
     "analyze_preference": ("analyze_preference", "正在整理声音、情绪与聆听场景"),
@@ -93,6 +95,8 @@ def _progress(request_id, action: str, elapsed_ms: int, metrics: dict | None = N
     return f"event: progress\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 _PLAN_ACTIONS = {
+    "read_document": ("阅读上传资料", "根据问题选择并读取文档原页或文本片段"),
+    "search_document": ("查找文档内容", "在当前会话的上传资料中定位相关信息"),
     "adjust_direction": ("调整执行方向", "已把运行中的最新补充加入当前目标"),
     "understand_preference": ("理解音乐偏好", "结合本轮输入与已有上下文确定探索边界"),
     "analyze_preference": ("建立本轮偏好画像", "提取艺人、声音、情绪、场景与探索切面"),

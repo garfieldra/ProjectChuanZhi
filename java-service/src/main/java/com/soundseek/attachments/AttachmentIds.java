@@ -18,7 +18,7 @@ public final class AttachmentIds {
     if (value.size() > 10 || value.stream().anyMatch(Objects::isNull)
         || new HashSet<>(value).size() != value.size() || content == null
         || content.length() > 2000 || (content.isBlank() && value.isEmpty())) {
-      throw new IllegalArgumentException("请填写消息或添加图片，每次最多10张");
+      throw new IllegalArgumentException("请填写消息或添加附件，每次最多10个");
     }
     return List.copyOf(value);
   }
