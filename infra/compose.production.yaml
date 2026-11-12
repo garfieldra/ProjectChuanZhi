@@ -18,8 +18,10 @@ services:
       - caddy-config:/config
     restart: unless-stopped
     networks:
-      - edge
-      - internal
+      edge:
+      internal:
+      account-proxy:
+        ipv4_address: 172.30.240.2
 
   java-service:
     build:
@@ -35,6 +37,7 @@ services:
       SESSION_COOKIE_SECURE: 'true'
       GITHUB_OAUTH_CLIENT_ID: ${GITHUB_OAUTH_CLIENT_ID:-}
       GITHUB_OAUTH_CLIENT_SECRET: ${GITHUB_OAUTH_CLIENT_SECRET:-}
+      AUTH_TRUSTED_PROXY_PATTERN: '172[.]30[.]240[.]2'
       AUTH_MAIL_ENABLED: ${AUTH_MAIL_ENABLED:-false}
       AUTH_MAIL_FROM: ${AUTH_MAIL_FROM:-}
       AUTH_MAIL_ENCRYPTION_KEY: ${AUTH_MAIL_ENCRYPTION_KEY:-}
@@ -62,8 +65,11 @@ services:
       start_period: 30s
     restart: unless-stopped
     networks:
-      - internal
-      - egress
+      internal:
+      egress:
+      account-proxy:
+        ipv4_address: 172.30.240.3
+        aliases: [account-api]
 
   agent-service:
     build:
@@ -167,6 +173,11 @@ services:
       - internal
 
 networks:
+  account-proxy:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.240.0/28
   edge:
   egress:
   internal:

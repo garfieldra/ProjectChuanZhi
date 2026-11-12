@@ -14,7 +14,8 @@ www.{$SITE_ADDRESS} {
 	encode @non_agent_stream zstd gzip
 
 	handle @agent_stream {
-		reverse_proxy java-service:8080 {
+		reverse_proxy account-api:8080 {
+			header_up X-Forwarded-Port {http.request.port}
 			flush_interval -1
 			header_down Cache-Control "no-cache, no-transform"
 			header_down X-Accel-Buffering "no"
@@ -23,11 +24,15 @@ www.{$SITE_ADDRESS} {
 
 	@account_oauth path /oauth2/* /login/oauth2/*
 	handle @account_oauth {
-		reverse_proxy java-service:8080
+		reverse_proxy account-api:8080 {
+			header_up X-Forwarded-Port {http.request.port}
+		}
 	}
 
 	handle /api/* {
-		reverse_proxy java-service:8080
+		reverse_proxy account-api:8080 {
+			header_up X-Forwarded-Port {http.request.port}
+		}
 	}
 
 	handle {

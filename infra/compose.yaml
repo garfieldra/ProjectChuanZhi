@@ -11,10 +11,12 @@ services:
         condition: service_healthy
     environment:
       VITE_API_BASE_URL: /api
-      VITE_API_PROXY_TARGET: http://java-service:8080
+      VITE_API_PROXY_TARGET: http://account-api:8080
     networks:
-      - public
-      - internal
+      public:
+      internal:
+      account-proxy:
+        ipv4_address: 172.30.240.2
 
   java-service:
     build:
@@ -34,6 +36,7 @@ services:
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:-soundseek}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-soundseek}
       KNOWLEDGE_MAINTAINER_IDS: ${KNOWLEDGE_MAINTAINER_IDS:-}
+      AUTH_TRUSTED_PROXY_PATTERN: '172[.]30[.]240[.]2'
       AUTH_MAIL_ENABLED: ${AUTH_MAIL_ENABLED:-false}
       AUTH_MAIL_FROM: ${AUTH_MAIL_FROM:-}
       AUTH_MAIL_ENCRYPTION_KEY: ${AUTH_MAIL_ENCRYPTION_KEY:-}
@@ -65,8 +68,11 @@ services:
       retries: 12
       start_period: 20s
     networks:
-      - public
-      - internal
+      public:
+      internal:
+      account-proxy:
+        ipv4_address: 172.30.240.3
+        aliases: [account-api]
 
   agent-service:
     build:
@@ -270,6 +276,11 @@ services:
       - internal
 
 networks:
+  account-proxy:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.240.0/28
   public:
   internal:
     internal: true

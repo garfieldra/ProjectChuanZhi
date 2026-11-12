@@ -34,7 +34,11 @@ Java 使用 `spring-boot-starter-mail`，连接/读/写超时均为 5 秒。[Spr
 
 SMTP 故障不阻断普通音乐功能的健康检查。申请响应只表示已受理；投递异步重试最多 5 次，失败记录 SMTP_DELIVERY_FAILED，不记录原始邮件或供应商异常。检查 auth_mail_job 中的状态/次数/脱敏原因即可，禁止将 ciphertext 解密内容贴进工单。修复配置后用户可重新申请；到期和失败任务会清除投递密文。
 
-服务端不得信任任意请求 Host 或转发头构造验证链接。默认不处理转发头；如启用代理感知，应在反代/容器网络限制可信来源。生产会话必须启用 Secure Cookie，GitHub 注册的回调需匹配固定公开地址 `/login/oauth2/code/github`。
+验证邮件仍只使用固定 `AUTH_PUBLIC_BASE_URL`。来源 IP 通过 Tomcat 原生 RemoteIpValve 解析，只信任 `AUTH_TRUSTED_PROXY_PATTERN` 指定的直接代理；独立启动默认仅信任精确回环地址 `127.0.0.1`、`::1` 和展开的 IPv6 回环。不得配置为任意地址或整个私网。
+
+标准及生产 Compose 为 Web→Java 设置专用 `account-proxy` 网络 `172.30.240.0/28`：Web 固定 `.2`，Java 固定 `.3`，上游别名 `account-api` 仅在此网络发布；Java 只信任 `.2`。部署前检查网段是否冲突，如需调整，必须同步修改网络、两个静态地址和信任正则。其他服务不加入该网络。Vite 覆盖客户端传入的来源、协议、Host 和端口转发头；Tomcat 读取可信来源的 `X-Forwarded-Port`，保留公开非默认端口。Caddy 使用默认的来源头清洗，并显式覆盖端口头；如再加 CDN 或负载均衡，应单独配置其可信地址及来源链，不能直接放开 Java 信任范围。生产会话必须启用 Secure Cookie，GitHub 注册的回调需匹配固定公开地址 `/login/oauth2/code/github`。
+
+GitHub 再认证返回 `#account-security` 后，页面展示本标签页待办，由用户点击“确认继续”才发信或全端退出。待办在 sessionStorage 内绑定账户、有效 10 分钟，仅包含操作及目标邮箱；取消、账号不匹配或过期时清除。密码和确认令牌不写浏览器存储。改邮箱确认页的原始链接通过当前服务端 Session 加密保存，OAuth 校验成功并轮换会话后返回受限本站确认页，再由用户确认消费；错误 GitHub 身份、版本变化或无效回跳均拒绝。
 
 ## 升级与会话
 

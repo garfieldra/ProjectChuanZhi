@@ -30,12 +30,14 @@ class AccountSecurityIntegrationTest {
  final String password="Account-Test-Password-123";
  class Browser {
   CookieManager cookies=new CookieManager(null,CookiePolicy.ACCEPT_ALL);
-  HttpClient client=HttpClient.newBuilder().cookieHandler(cookies).version(HttpClient.Version.HTTP_1_1).build();
-  Browser() throws Exception{get("/auth/session",200);}
+  HttpClient client;String forwardedIp;
+  Browser() throws Exception{this(null);}
+  Browser(String source) throws Exception{var builder=HttpClient.newBuilder().cookieHandler(cookies).version(HttpClient.Version.HTTP_1_1);if(source!=null)builder.localAddress(InetAddress.getByName(source));client=builder.build();get("/auth/session",200);}
   JsonNode get(String path,int status)throws Exception{return call("GET",path,null,status);}
   JsonNode post(String path,Object body,int status)throws Exception{return call("POST",path,body,status);}
   JsonNode call(String method,String path,Object body,int expected)throws Exception{
    var request=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1"+path)).timeout(Duration.ofSeconds(20)).header("Content-Type","application/json").header("Idempotency-Key",UUID.randomUUID().toString());
+   if(forwardedIp!=null)request.header("X-Forwarded-For",forwardedIp);
    if(!method.equals("GET"))cookies.getCookieStore().getCookies().stream().filter(c->c.getName().equals("XSRF-TOKEN")).findFirst().ifPresent(c->request.header("X-XSRF-TOKEN",URLDecoder.decode(c.getValue(),StandardCharsets.UTF_8)));
    request.method(method,body==null?HttpRequest.BodyPublishers.noBody():HttpRequest.BodyPublishers.ofString(json.writeValueAsString(body)));
    var response=client.send(request.build(),HttpResponse.BodyHandlers.ofString());assertEquals(expected,response.statusCode(),path+": "+response.body());
@@ -48,6 +50,28 @@ class AccountSecurityIntegrationTest {
   assertFalse(rows.isEmpty());String encrypted=(String)rows.getFirst().get("ciphertext");String payload=mail.decrypt(encrypted);var match=Pattern.compile("&token=([A-Za-z0-9_-]+)").matcher(payload);assertTrue(match.find());String token=match.group(1);assertFalse(encrypted.contains(token));return token;
  }
  JsonNode register(Browser b,String email)throws Exception{b.post("/auth/register",Map.of("email",email,"password",password,"displayName","账号验收"),202);String t=token("REGISTER",email);var value=b.post("/auth/registration/confirm",Map.of("token",t),200);b.refresh();return value;}
+ @org.springframework.boot.test.context.TestConfiguration(proxyBeanMethods=false) static class ProxyRedirectFixture {
+  @org.springframework.context.annotation.Bean org.springframework.boot.web.servlet.ServletRegistrationBean<jakarta.servlet.http.HttpServlet> proxyRedirect(){
+   return new org.springframework.boot.web.servlet.ServletRegistrationBean<>(new jakarta.servlet.http.HttpServlet(){
+    @Override protected void doGet(jakarta.servlet.http.HttpServletRequest request,jakarta.servlet.http.HttpServletResponse response)throws java.io.IOException{response.sendRedirect("/?login=success#account-security");}
+   },"/browser-proxy-return");
+  }
+ }
+ @Test void trustedProxyPreservesPublicPortInRelativeRedirects()throws Exception{
+  var request=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/browser-proxy-return"))
+   .header("X-Forwarded-For","203.0.113.50").header("X-Forwarded-Host","example.test:15173").header("X-Forwarded-Proto","http").header("X-Forwarded-Port","15173").build();
+  var response=HttpClient.newHttpClient().send(request,HttpResponse.BodyHandlers.ofString());
+  assertEquals(302,response.statusCode());assertEquals("http://example.test:15173/?login=success#account-security",response.headers().firstValue("Location").orElseThrow());
+ }
+ @Test void emailReauthReturnIsEncryptedBoundToOwnerAndInvalidatedWithChallenge()throws Exception{
+  var browser=new Browser();String oldEmail=email();var user=register(browser,oldEmail);UUID id=UUID.fromString(user.path("userId").asText());
+  String next=email();lifecycle.changeEmailRequest(id,next,UUID.randomUUID().toString());String t=token("CHANGE_EMAIL",next);
+  String encrypted=lifecycle.prepareEmailReauthReturn(id,t);assertFalse(encrypted.contains(t));
+  assertEquals("/#auth-confirm?purpose=CHANGE_EMAIL&token="+t,mail.decrypt(encrypted));
+  assertThrows(AuthFailure.class,()->lifecycle.prepareEmailReauthReturn(UUID.randomUUID(),t));
+  db.update("UPDATE auth_challenge SET consumed_at=CURRENT_TIMESTAMP(3) WHERE token_hash=?",AuthMailService.hash(t));
+  assertThrows(AuthFailure.class,()->lifecycle.prepareEmailReauthReturn(id,t));
+ }
  @Test void registrationRequiresOwnershipSendsRealSmtpAndRevokesOldGuestAccess()throws Exception{
   var b=new Browser();String email=email();var conversation=b.post("/conversations",Map.of(),201);String id=conversation.path("id").asText();
   b.post("/auth/register",Map.of("email",email,"password",password),202);
@@ -117,6 +141,28 @@ class AccountSecurityIntegrationTest {
    assertTrue(read.await(10,TimeUnit.SECONDS));lifecycle.logoutAll(id);release.countDown();updating.get(15,TimeUnit.SECONDS);
    var updated=users.findById(id).orElseThrow();assertEquals(version+1,updated.getAuthVersion());assertEquals("并发昵称",updated.getDisplayName());b.get("/me/saved-songs",401);
   }finally{release.countDown();pool.shutdownNow();}
+ }
+ @org.junit.jupiter.params.ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(strings={"REGISTER","RESET"})
+ void invalidConfirmationTrafficDoesNotBlockAnotherVisitor(String purpose)throws Exception{
+  var victim=new Browser();victim.forwardedIp="198.51.100.90";String address=email();
+  if(purpose.equals("RESET")){register(victim,address);victim.post("/auth/logout",Map.of(),200);victim.refresh();resetLimits();victim.post("/auth/password-reset/request",Map.of("email",address),202);}
+  else victim.post("/auth/register",Map.of("email",address,"password",password),202);
+  String t=token(purpose,address),path=purpose.equals("REGISTER")?"/auth/registration/confirm":"/auth/password-reset/confirm";
+  var attacker=new Browser();attacker.forwardedIp="198.51.100.91";
+  for(int i=0;i<25;i++){int code=confirmationStatus(attacker,path,"invalid-token-"+i);assertTrue(code==400||code==429);}
+  victim.post(path,Map.of("token",t,"password",password),200);
+ }
+ int confirmationStatus(Browser b,String path,String token)throws Exception{
+  var request=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1"+path)).header("Content-Type","application/json");
+  if(b.forwardedIp!=null)request.header("X-Forwarded-For",b.forwardedIp);
+  b.cookies.getCookieStore().getCookies().stream().filter(c->c.getName().equals("XSRF-TOKEN")).findFirst().ifPresent(c->request.header("X-XSRF-TOKEN",URLDecoder.decode(c.getValue(),StandardCharsets.UTF_8)));
+  return b.client.send(request.POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(Map.of("token",token,"password",password)))).build(),HttpResponse.BodyHandlers.ofString()).statusCode();
+ }
+ @Test void trustedProxyClientsHaveIndependentMailQuotas()throws Exception{
+  var browser=new Browser();for(int i=1;i<=21;i++){browser.forwardedIp="203.0.113."+i;browser.post("/auth/password-reset/request",Map.of("email",email()),202);}
+ }
+ @Test void untrustedSocketCannotRotateItsQuotaUsingForwardedHeaders()throws Exception{
+  var browser=new Browser("127.0.0.2");for(int i=1;i<=21;i++){browser.forwardedIp="203.0.113."+i;browser.post("/auth/password-reset/request",Map.of("email",email()),i==21?429:202);}
  }
  @Test void csrfAndMailRateLimitAreEnforced()throws Exception{
   var raw=HttpClient.newHttpClient().send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/auth/register")).header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString("{}")).build(),HttpResponse.BodyHandlers.ofString());assertEquals(403,raw.statusCode());

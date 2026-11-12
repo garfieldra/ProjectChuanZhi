@@ -75,6 +75,13 @@ public class RedisRateLimitService {
     atomicLimit("auth-account:"+hash(email),loginAccount,900);
     atomicLimit("auth-combination:"+hash(ip+":"+email),loginCombination,900);
   }
+  public void assertChallengeSourceAllowed(String ip,String purpose) {
+    atomicLimit("auth-ip:"+hash(ip),loginIp,60);
+    atomicLimit("challenge-source:"+hash(purpose+":"+ip),loginCombination,900);
+  }
+  public void assertChallengeIdentityAllowed(String purpose,String challengeId) {
+    atomicLimit("challenge:"+hash(purpose+":"+challengeId),loginAccount,900);
+  }
   public void assertMailAllowed(String ip,String email,String requestKey) {
     if(requestKey==null||requestKey.isBlank()||requestKey.length()>100)throw new IllegalArgumentException("需要有效的提交标识。");
     String script="if redis.call('EXISTS',KEYS[1])==1 then return 0 end; "

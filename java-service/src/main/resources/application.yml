@@ -2,7 +2,11 @@ knowledge:
   maintainer-ids: ${KNOWLEDGE_MAINTAINER_IDS:}
 
 server:
-  forward-headers-strategy: ${SERVER_FORWARD_HEADERS_STRATEGY:none}
+  forward-headers-strategy: native
+  tomcat:
+    remoteip:
+      port-header: X-Forwarded-Port
+      internal-proxies: ${AUTH_TRUSTED_PROXY_PATTERN:127[.]0[.]0[.]1|::1|0:0:0:0:0:0:0:1}
   servlet:
     session:
       cookie:

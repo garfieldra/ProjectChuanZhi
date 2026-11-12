@@ -30,6 +30,14 @@ import org.springframework.jdbc.core.JdbcTemplate;import org.springframework.sec
   var rows=db.queryForList("SELECT c.*,BIN_TO_UUID(user_id) AS user_uuid FROM auth_challenge c WHERE token_hash=? AND purpose=? AND consumed_at IS NULL AND expires_at>CURRENT_TIMESTAMP(3)"+(lock?" FOR UPDATE":""),AuthMailService.hash(token),purpose);
   if(rows.isEmpty())throw AuthFailure.invalid();return rows.getFirst();
  }
+ public String confirmationChallengeId(String token,String purpose){
+  try{return (String)find(token,purpose,false).get("id");}catch(AuthFailure invalid){return null;}
+ }
+ @Transactional(readOnly=true) public String prepareEmailReauthReturn(UUID id,String token){
+  var c=find(token,"CHANGE_EMAIL",false);var u=users.findById(id).orElseThrow(AuthFailure::invalid);AccountService.requireActive(u);
+  if(!id.toString().equals(c.get("user_uuid")))throw AuthFailure.invalid();checkVersion(c,u);
+  return mail.encrypt("/#auth-confirm?purpose=CHANGE_EMAIL&token="+token);
+ }
  @Transactional public UserAccount confirmRegistration(String token,String password,String browser,GuestSession guest){
   guests.findByIdForUpdate(guest.getId()).orElseThrow();var c=find(token,"REGISTER",true);
   if(!Objects.equals(c.get("browser_hash"),browser)&&(password==null||password.length()>128||!passwords.matches(password,(String)c.get("password_hash"))))throw AuthFailure.invalid();
