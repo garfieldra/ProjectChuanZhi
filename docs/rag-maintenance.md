@@ -2,13 +2,15 @@
 
 本功能默认只允许人工维护。候选提取和向量化不赋予自动审核或自动发布权限。当前不启用自动采集器。本文更新于 2026-11-11，按合并 SoundSeek 主干后的配置说明。
 
+旧 `KNOWLEDGE_MAINTAINERS` 邮箱名单不再授予权限；账号升级后需重新登录并按 UUID 配置，见 [账号维护说明](./account-maintenance.md)。本记录中的原有测试数量属于账号升级前的 RAG 验证。
+
 ## 配置与启动
 
-在服务端设置 `KNOWLEDGE_MAINTAINERS` 为已经注册并登录的维护者邮箱，多个邮箱用英文逗号分隔；默认空值不授予任何账号维护权限。该配置不能由用户注册表单修改。Java 原生运行时也需在运行配置中设置此环境变量。
+在服务端设置 `KNOWLEDGE_MAINTAINER_IDS` 为已经注册、邮箱已验证的维护者账户 UUID，多个 UUID 用英文逗号分隔；默认空值不授予任何账号维护权限。该配置不能由用户注册表单修改。Java 原生运行时也需在运行配置中设置此环境变量。
 
 | 配置 | 当前用途 |
 | --- | --- |
-| `KNOWLEDGE_MAINTAINERS` | Java 侧注册账号邮箱白名单，默认空值；配置后重启对应 Java 服务 |
+| `KNOWLEDGE_MAINTAINER_IDS` | Java 侧已验证账号 UUID 白名单，默认空值；配置后重启对应 Java 服务 |
 | `KNOWLEDGE_MIN_SIMILARITY` | Agent 检索最低向量相似度，默认 0.5，不代表事实置信度 |
 | `KNOWLEDGE_JAVA_BASE_URL` | 知识 Worker 的 Java 内部地址，Compose 默认 `http://java-service:8080` |
 | `AGENT_INTERNAL_SERVICE_TOKEN` | Java、Agent 和知识 Worker 共享的内部服务凭据；不要提交实际值 |

@@ -36,6 +36,8 @@ public class AuthIdentity {
     return value;
   }
 
+  public void changePassword(String hash){passwordHash=hash;updatedAt=Instant.now();}
+  public void changeSubject(String subject){providerSubject=subject;updatedAt=Instant.now();}
   public UUID getUserId() { return userId; }
   public String getPasswordHash() { return passwordHash; }
 }

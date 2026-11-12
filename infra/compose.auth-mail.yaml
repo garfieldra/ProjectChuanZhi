@@ -1,0 +1,22 @@
+# Local capture only; do not deploy this inbox to a public interface.
+services:
+  java-service:
+    environment:
+      AUTH_MAIL_ENABLED: 'true'
+      AUTH_MAIL_FROM: test@soundseek.invalid
+      AUTH_MAIL_ENCRYPTION_KEY: ${AUTH_MAIL_ENCRYPTION_KEY:?Generate a random base64 32-byte local key}
+      AUTH_PUBLIC_BASE_URL: ${AUTH_PUBLIC_BASE_URL:-http://localhost:5173}
+      SMTP_HOST: mailpit
+      SMTP_PORT: '1025'
+      SMTP_AUTH: 'false'
+      SMTP_STARTTLS: 'false'
+      SMTP_SSL: 'false'
+    depends_on:
+      mailpit:
+        condition: service_started
+  mailpit:
+    image: axllent/mailpit:v1.27.4
+    profiles: [auth-mail]
+    ports:
+      - '127.0.0.1:8025:8025'
+    networks: [internal]

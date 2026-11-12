@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type RefObject } from 'react'
-import { requestAuth, type AuthSession } from './auth'
+import { requestAuth, accountRequest, type AuthSession } from './auth'
 import './auth.css'
 
 type Props = {
@@ -11,6 +11,8 @@ type Props = {
 
 export function AuthDialog({ session, onClose, onSessionChange, returnFocusRef }: Props) {
   const [registering, setRegistering] = useState(false)
+  const [recovering, setRecovering] = useState(false)
+  const [notice, setNotice] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
@@ -34,9 +36,13 @@ export function AuthDialog({ session, onClose, onSessionChange, returnFocusRef }
   async function submit(event?: FormEvent) {
     event?.preventDefault()
     if (inFlight.current) return
-    inFlight.current = true; setSubmitting(true); setError('')
+    inFlight.current = true; setSubmitting(true); setError(''); setNotice('')
     try {
-      const action = session?.authenticated ? 'logout' : registering ? 'register' : 'login'
+      if (registering || recovering) {
+        const result = await accountRequest(recovering ? '/auth/password-reset/request' : '/auth/register', recovering ? { email } : { email, password, displayName })
+        setNotice(result.message); setPassword(''); return
+      }
+      const action = session?.authenticated ? 'logout' : 'login'
       const body = session?.authenticated ? undefined : registering ? { email, password, displayName } : { email, password }
       const updated = await requestAuth(action, body)
       if (action !== 'logout' && !updated.authenticated) throw new Error('登录没有完成，请再试一次。')
@@ -52,21 +58,23 @@ export function AuthDialog({ session, onClose, onSessionChange, returnFocusRef }
   }}>
     <button className="auth-dialog-close" type="button" onClick={onClose} disabled={submitting} aria-label="关闭账户窗口"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button>
     <p className="eyebrow">{session?.authenticated ? '我的账户' : '同步音乐探索'}</p>
-    <h2 id={titleId}>{session?.authenticated ? session.displayName || '寻声听友' : registering ? '创建账户' : '欢迎回来'}</h2>
+    <h2 id={titleId}>{session?.authenticated ? session.displayName || '寻声听友' : recovering ? '找回密码' : registering ? '创建账户' : '欢迎回来'}</h2>
     <p id={descriptionId}>{session?.authenticated ? session.email : '登录后，当前访客对话会自动保留并同步到你的账户。'}</p>
     {session?.authenticated ? <>{error && <p className="auth-error" role="alert">{error}</p>}<button className="auth-secondary" type="button" onClick={() => void submit()} disabled={submitting}>{submitting ? '正在退出…' : '退出登录'}</button></> : <>
+      {notice && <p role="status">{notice}</p>}
       <form onSubmit={event => void submit(event)} aria-busy={submitting}>
         <fieldset disabled={submitting}>
           {registering && <label>称呼<input value={displayName} maxLength={80} onChange={event => setDisplayName(event.target.value)} autoComplete="name" /></label>}
           <label>邮箱<input type="email" required maxLength={320} value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" /></label>
-          <label>密码<input type="password" required minLength={registering ? 10 : undefined} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} autoComplete={registering ? 'new-password' : 'current-password'} /></label>
-          {registering && <small className="auth-password-hint">密码至少 10 位。</small>}
+          {!recovering && <label>密码<input type="password" required minLength={registering ? 10 : undefined} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} autoComplete={registering ? 'new-password' : 'current-password'} /></label>}
+          {registering && <small className="auth-password-hint">密码至少 10 个字符，最多 72 个 UTF-8 字节；注册需邮件确认。</small>}
           {error && <p className="auth-error" role="alert">{error}</p>}
-          <button className="auth-primary" type="submit">{submitting ? '正在处理…' : registering ? '创建并登录' : '登录'}</button>
+          <button className="auth-primary" type="submit">{submitting ? '正在处理…' : recovering ? '发送恢复邮件' : registering ? '发送确认邮件' : '登录'}</button>
         </fieldset>
       </form>
       {session?.githubEnabled && !submitting && <a className="auth-github" href="/oauth2/authorization/github">使用 GitHub 登录</a>}
-      <button className="auth-switch" type="button" disabled={submitting} onClick={() => { setRegistering(value => !value); setError(''); setPassword('') }}>{registering ? '已有账户？直接登录' : '还没有账户？创建一个'}</button>
+      <button className="auth-switch" type="button" disabled={submitting} onClick={() => { setRegistering(value => !value); setRecovering(false); setError(''); setNotice(''); setPassword('') }}>{registering ? '已有账户？直接登录' : '还没有账户？创建一个'}</button>
+      <button className="auth-switch" type="button" disabled={submitting} onClick={() => { setRecovering(value => !value); setRegistering(false); setError(''); setNotice(''); setPassword('') }}>{recovering ? '返回登录' : '忘记密码？'}</button>
     </>}
   </dialog>
 }

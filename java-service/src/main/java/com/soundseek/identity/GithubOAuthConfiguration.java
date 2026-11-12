@@ -10,10 +10,10 @@ import org.springframework.security.oauth2.core.AuthorizationGrantType;
 @ConditionalOnExpression("'${soundseek.auth.github-client-id:}'.length() > 0 and '${soundseek.auth.github-client-secret:}'.length() > 0")
 public class GithubOAuthConfiguration {
   @Bean
-  ClientRegistrationRepository clientRegistrationRepository(@Value("${soundseek.auth.github-client-id}") String clientId,@Value("${soundseek.auth.github-client-secret}") String clientSecret) {
+  ClientRegistrationRepository clientRegistrationRepository(@Value("${soundseek.auth.github-client-id}") String clientId,@Value("${soundseek.auth.github-client-secret}") String clientSecret,@Value("${soundseek.auth.mail.public-base-url:http://localhost:5173}") String publicUrl) {
     var github = ClientRegistration.withRegistrationId("github").clientId(clientId).clientSecret(clientSecret)
         .clientName("GitHub").authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-        .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}").scope("read:user", "user:email")
+        .redirectUri(publicUrl.replaceAll("/+$", "")+"/login/oauth2/code/{registrationId}").scope("read:user", "user:email")
         .authorizationUri("https://github.com/login/oauth/authorize").tokenUri("https://github.com/login/oauth/access_token")
         .userInfoUri("https://api.github.com/user").userNameAttributeName("id").build();
     return new InMemoryClientRegistrationRepository(github);

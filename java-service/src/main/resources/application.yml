@@ -1,8 +1,12 @@
 knowledge:
-  maintainers: ${KNOWLEDGE_MAINTAINERS:}
+  maintainer-ids: ${KNOWLEDGE_MAINTAINER_IDS:}
 
 server:
-  forward-headers-strategy: framework
+  forward-headers-strategy: native
+  tomcat:
+    remoteip:
+      port-header: X-Forwarded-Port
+      internal-proxies: ${AUTH_TRUSTED_PROXY_PATTERN:127[.]0[.]0[.]1|::1|0:0:0:0:0:0:0:1}
   servlet:
     session:
       cookie:
@@ -34,7 +38,7 @@ spring:
     store-type: redis
     timeout: 30d
     redis:
-      namespace: soundseek:session
+      namespace: soundseek:session:v2
   rabbitmq:
     host: ${SPRING_RABBITMQ_HOST:rabbitmq}
     port: ${SPRING_RABBITMQ_PORT:5672}
@@ -51,6 +55,9 @@ springdoc:
     path: /swagger-ui
 
 management:
+  health:
+    mail:
+      enabled: false # SMTP outages must not block ordinary music or existing login sessions.
   endpoints:
     web:
       exposure:
@@ -97,6 +104,11 @@ soundseek:
     github-client-id: ${GITHUB_OAUTH_CLIENT_ID:}
     github-client-secret: ${GITHUB_OAUTH_CLIENT_SECRET:}
     secure-cookies: ${SESSION_COOKIE_SECURE:false}
+    mail:
+      enabled: ${AUTH_MAIL_ENABLED:false}
+      from: ${AUTH_MAIL_FROM:}
+      public-base-url: ${AUTH_PUBLIC_BASE_URL:http://localhost:5173}
+      encryption-key: ${AUTH_MAIL_ENCRYPTION_KEY:}
   redis:
     idempotency-ttl: 24h
     provider-cache-ttl: 6h
@@ -117,3 +129,20 @@ listening:
     user-agent: ${APPLE_ITUNES_USER_AGENT:SoundSeek/0.1}
     available-cache-hours: ${APPLE_PREVIEW_AVAILABLE_CACHE_HOURS:168}
     unavailable-cache-hours: ${APPLE_PREVIEW_UNAVAILABLE_CACHE_HOURS:24}
+
+# Configure the provider's encryption mode explicitly; credentials stay server-side.
+---
+spring:
+  mail:
+    host: ${SMTP_HOST:}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${SMTP_AUTH:true}
+      mail.smtp.starttls.enable: ${SMTP_STARTTLS:true}
+      mail.smtp.starttls.required: ${SMTP_STARTTLS:true}
+      mail.smtp.ssl.enable: ${SMTP_SSL:false}
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AUTH_SESSION_CHANGED_EVENT, requestAuth } from './auth'
+import { AUTH_SESSION_CHANGED_EVENT, accountRequest, requestAuth } from './auth'
 
 const json = (body: object, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
@@ -13,16 +13,16 @@ describe('shared account API contract', () => {
     vi.stubGlobal('fetch', fetch)
     await requestAuth('session')
     await requestAuth('login', { email: 'listener@example.test', password: 'test-only-password' })
-    await requestAuth('register', { email: 'new@example.test', password: 'test-only-password', displayName: '听友' })
+    await accountRequest('/auth/register', { email: 'new@example.test', password: 'test-only-password', displayName: '听友' })
     await requestAuth('logout')
-    expect(fetch.mock.calls.map(call => call[0])).toEqual(['/api/v1/auth/session', '/api/v1/auth/login', '/api/v1/auth/register', '/api/v1/auth/logout'])
+    expect(fetch.mock.calls.map(call => call[0])).toEqual(['/api/v1/auth/session', '/api/v1/auth/login', '/api/v1/auth/session', '/api/v1/auth/register', '/api/v1/auth/session', '/api/v1/auth/logout', '/api/v1/auth/session'])
     expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'GET', credentials: 'include' })
-    for (const [, options] of fetch.mock.calls.slice(1)) {
+    for (const [, options] of fetch.mock.calls.filter(call => call[1].method === 'POST')) {
       expect(options.credentials).toBe('include')
       expect(options.headers.get('X-XSRF-TOKEN')).toBe('account-csrf-token')
     }
-    expect(JSON.parse(fetch.mock.calls[2][1].body)).toMatchObject({ displayName: '听友' })
-    expect(fetch.mock.calls[3][1].body).toBeUndefined()
+    expect(JSON.parse(fetch.mock.calls[3][1].body)).toMatchObject({ displayName: '听友' })
+    expect(fetch.mock.calls[5][1].body).toBeUndefined()
   })
 
   it('rejects unconfirmed identity instead of treating a malformed success as a guest', async () => {

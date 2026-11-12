@@ -16,10 +16,10 @@ class AccountProfileTest {
     var users = mock(UserAccountRepository.class);
     var account = UserAccount.create("listener@example.test", "Original", null, UUID.randomUUID());
     var id=account.getId();var guest=account.getPrimaryGuestSessionId();
-    when(users.findByEmailNormalized("listener@example.test")).thenReturn(Optional.of(account));
+    when(users.findById(account.getId())).thenReturn(Optional.of(account));
     when(users.save(account)).thenReturn(account);
     var service = new AccountService(users,null,null,null,null,null,null);
-    assertEquals("新称呼",service.updateProfile("listener@example.test"," 新称呼 ").getDisplayName());
+    assertEquals("新称呼",service.updateProfile(account.getId().toString()," 新称呼 ").getDisplayName());
     assertEquals(id,account.getId());assertEquals(guest,account.getPrimaryGuestSessionId());assertEquals("listener@example.test",account.getEmailNormalized());verify(users).save(account);
     assertThrows(IllegalArgumentException.class,()->account.rename("   "));
     assertThrows(IllegalArgumentException.class,()->account.rename("a".repeat(81)));
@@ -27,7 +27,7 @@ class AccountProfileTest {
   @Test void profileEndpointRejectsGuestAndInvalidInput() throws Exception {
     var accounts=mock(AccountService.class);
     @SuppressWarnings("unchecked") ObjectProvider<ClientRegistrationRepository> clients=mock(ObjectProvider.class);
-    var mvc=MockMvcBuilders.standaloneSetup(new AuthController(accounts,null,null,null,clients)).build();
+    var mvc=MockMvcBuilders.standaloneSetup(new AuthController(accounts,null,null,null,null,clients)).setControllerAdvice(new com.soundseek.tournament.web.ApiExceptionHandler()).build();
     mvc.perform(patch("/api/v1/auth/profile").contentType("application/json").content("{\"displayName\":\"Name\"}")).andExpect(status().isUnauthorized());
     mvc.perform(patch("/api/v1/auth/profile").principal(()->"guest:test").contentType("application/json").content("{\"displayName\":\"Name\"}")).andExpect(status().isUnauthorized());
     mvc.perform(patch("/api/v1/auth/profile").principal(()->"listener@example.test").contentType("application/json").content("{\"displayName\":\"  \"}")).andExpect(status().isBadRequest());

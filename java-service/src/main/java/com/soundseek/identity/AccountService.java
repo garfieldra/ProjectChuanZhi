@@ -37,6 +37,7 @@ public class AccountService implements UserDetailsService {
   @Transactional
   public UserAccount completePasswordLogin(String email, GuestSession currentGuest) {
     var account = users.findByEmailNormalized(normalize(email)).orElseThrow(() -> new UsernameNotFoundException("invalid credentials"));
+    requireActive(account);
     if (!currentGuest.getId().equals(account.getPrimaryGuestSessionId())) {
       assets.merge(currentGuest.getId(), account.getPrimaryGuestSessionId());
       profiles.refresh(guestSessions.findById(account.getPrimaryGuestSessionId()).orElseThrow());
@@ -49,18 +50,19 @@ public class AccountService implements UserDetailsService {
   public UserAccount completeGithubLogin(String subject, String displayName, String avatarUrl, GuestSession currentGuest) {
     var existing = identities.findByProviderAndProviderSubject("GITHUB", subject);
     UserAccount account;
-    if (existing.isPresent()) account = users.findById(existing.get().getUserId()).orElseThrow();
+    if (existing.isPresent()) account = users.lockById(existing.get().getUserId()).orElseThrow();
     else {
-      account = users.save(UserAccount.create("github-" + subject + "@users.soundseek.local", normalizedName(displayName, "GitHub 用户"), avatarUrl, currentGuest.getId()));
+      account = users.save(UserAccount.create(null, normalizedName(displayName, "GitHub 用户"), avatarUrl, currentGuest.getId()));
       identities.save(AuthIdentity.github(account.getId(), subject));
     }
+    requireActive(account);
     assets.merge(currentGuest.getId(), account.getPrimaryGuestSessionId());
     if (!currentGuest.getId().equals(account.getPrimaryGuestSessionId())) profiles.refresh(guestSessions.findById(account.getPrimaryGuestSessionId()).orElseThrow());
     guestIdentities.revoke(currentGuest);
     return account;
   }
 
-  @Transactional(readOnly = true) public Optional<UserAccount> current(String username) { return username == null ? Optional.empty() : users.findByEmailNormalized(normalize(username)); }
+  @Transactional(readOnly = true) public Optional<UserAccount> current(String username) { try { return username == null ? Optional.empty() : users.findById(UUID.fromString(username)); } catch (IllegalArgumentException e) { return Optional.empty(); } }
 
   @Transactional
   public UserAccount updateProfile(String username, String displayName) {
@@ -72,11 +74,14 @@ public class AccountService implements UserDetailsService {
   @Override @Transactional(readOnly = true)
   public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
     var account = users.findByEmailNormalized(normalize(username)).orElseThrow(() -> new UsernameNotFoundException("invalid credentials"));
-    var password = identities.findByUserIdAndProvider(account.getId(), "PASSWORD").map(AuthIdentity::getPasswordHash).orElse("{noop}oauth-only-account");
+    var password = identities.findByUserIdAndProvider(account.getId(), "PASSWORD").map(AuthIdentity::getPasswordHash).orElseThrow(() -> new UsernameNotFoundException("invalid credentials"));
     return User.withUsername(account.getEmailNormalized()).password(password).roles("USER").disabled(!"ACTIVE".equals(account.getStatus())).build();
   }
 
-  static String normalize(String email) { return email == null ? "" : email.trim().toLowerCase(Locale.ROOT); }
+  @Transactional(readOnly=true) public long loginVersion(String email){return users.findByEmailNormalized(normalize(email)).map(UserAccount::getAuthVersion).orElse(-1L);}
+  static void requireActive(UserAccount account){if(!"ACTIVE".equals(account.getStatus()))throw new org.springframework.security.authentication.DisabledException("account unavailable");}
+
+  public static String normalize(String email) { return email == null ? "" : email.trim().toLowerCase(Locale.ROOT); }
   private String normalizedName(String value, String fallback) { var trimmed = value == null ? "" : value.trim(); var selected = trimmed.isBlank() ? fallback : trimmed; return selected.substring(0, Math.min(selected.length(), 80)); }
   public static class DuplicateAccountException extends DataIntegrityViolationException { public DuplicateAccountException() { super("account already exists"); } }
 }

@@ -18,8 +18,10 @@ services:
       - caddy-config:/config
     restart: unless-stopped
     networks:
-      - edge
-      - internal
+      edge:
+      internal:
+      account-proxy:
+        ipv4_address: 172.30.240.2
 
   java-service:
     build:
@@ -31,6 +33,22 @@ services:
       SPRING_DATASOURCE_USERNAME: ${MYSQL_USER}
       SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD}
       SPRING_DATA_REDIS_URL: redis://redis:6379/0
+      KNOWLEDGE_MAINTAINER_IDS: ${KNOWLEDGE_MAINTAINER_IDS:-}
+      SESSION_COOKIE_SECURE: 'true'
+      GITHUB_OAUTH_CLIENT_ID: ${GITHUB_OAUTH_CLIENT_ID:-}
+      GITHUB_OAUTH_CLIENT_SECRET: ${GITHUB_OAUTH_CLIENT_SECRET:-}
+      AUTH_TRUSTED_PROXY_PATTERN: '172[.]30[.]240[.]2'
+      AUTH_MAIL_ENABLED: ${AUTH_MAIL_ENABLED:-false}
+      AUTH_MAIL_FROM: ${AUTH_MAIL_FROM:-}
+      AUTH_MAIL_ENCRYPTION_KEY: ${AUTH_MAIL_ENCRYPTION_KEY:-}
+      AUTH_PUBLIC_BASE_URL: ${AUTH_PUBLIC_BASE_URL:-https://music.example.com}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_AUTH: ${SMTP_AUTH:-true}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      SMTP_SSL: ${SMTP_SSL:-false}
       AGENT_INTERNAL_BASE_URL: http://agent-service:8000
       APPLE_ITUNES_STOREFRONT: ${APPLE_ITUNES_STOREFRONT:-US}
       AGENT_INTERNAL_SERVICE_TOKEN: ${AGENT_INTERNAL_SERVICE_TOKEN}
@@ -47,8 +65,11 @@ services:
       start_period: 30s
     restart: unless-stopped
     networks:
-      - internal
-      - egress
+      internal:
+      egress:
+      account-proxy:
+        ipv4_address: 172.30.240.3
+        aliases: [account-api]
 
   agent-service:
     build:
@@ -152,6 +173,11 @@ services:
       - internal
 
 networks:
+  account-proxy:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.240.0/28
   edge:
   egress:
   internal:

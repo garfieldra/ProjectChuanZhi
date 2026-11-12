@@ -52,6 +52,12 @@ SoundSeek 不要求用户先填写标签或进入固定流程。用户可以直�
 
 设计与验收见 [我的音乐规格](Specs/04-功能规格/27-我的音乐歌曲保存与再次探索.md)。独立本地环境可运行 `python3 Demos/verify_saved_song_library.py`，该脚本会创建测试访客和账户，不调用模型。
 
+### 账号与邮件验证
+
+邮箱注册需先通过邮件确认；支持找回密码、修改密码/邮箱和退出全部设备。现有 GitHub 登录与访客数据归并保留。账号停用与清理范围预览通过受控运维命令执行，本版本不提供物理删除。
+
+发信通过 Java SMTP 适配器和加密事务队列完成；默认关闭，未配置时不会假报发送成功。开发可使用本地 Mailpit 收件箱，配置与验收边界见 [账号维护说明](./docs/account-maintenance.md)。维护者改按已验证账户 UUID 配置 `KNOWLEDGE_MAINTAINER_IDS`，旧邮箱名单不再授予权限。
+
 ### 人工维护的音乐证据库
 
 - 维护者手动录入、导入 JSON/JSONL、整理 Markdown/TXT 或读取指定公开网页；模型辅助提取可选；
@@ -248,7 +254,7 @@ docker compose --env-file .env -f infra/compose.yaml exec agent-service \
 
 ### 4. 可选：启用人工知识库
 
-在 `.env` 中设置 `KNOWLEDGE_MAINTAINERS` 为已注册维护者的邮箱，然后使用知识组件叠加配置启动：
+在 `.env` 中设置 `KNOWLEDGE_MAINTAINER_IDS` 为已注册且邮箱已验证的维护者账户 UUID，然后使用知识组件叠加配置启动：
 
 ```bash
 docker compose --env-file .env -f infra/compose.yaml -f infra/compose.knowledge.yaml \
@@ -324,7 +330,7 @@ python3 Demos/verify_music_providers.py
 
 音乐证据型 RAG 支持维护者导入资料、人工审核发布、版本更新与撤回，以及统一 Agent 按需检索和引用。自动收集只预留候选提交契约，当前不启用。知识库不会替代在线歌曲发现与 MusicBrainz 核验。
 
-启动可选知识服务、维护者权限、资料格式及验收方法见 [RAG 维护说明](./docs/rag-maintenance.md)；完整方案见 [RAG 设计](./docs/rag-design.md)，测试范围见 [验收记录](./docs/rag-validation.md)。默认没有维护者权限，需在服务端配置 `KNOWLEDGE_MAINTAINERS`。浏览器操作、截图及修复结果见 [浏览器验收记录](./docs/rag-browser-acceptance.md)。
+启动可选知识服务、维护者权限、资料格式及验收方法见 [RAG 维护说明](./docs/rag-maintenance.md)；完整方案见 [RAG 设计](./docs/rag-design.md)，测试范围见 [验收记录](./docs/rag-validation.md)。默认没有维护者权限，需在服务端配置 `KNOWLEDGE_MAINTAINER_IDS`。浏览器操作、截图及修复结果见 [浏览器验收记录](./docs/rag-browser-acceptance.md)。
 
 截至 2026-11-10，合并 `main@d317353` 后的回归为 **Java 51 项、Agent 124 项、Web 66 项通过**，前端生产构建与 Compose 配置检查通过。浏览器验收使用合成材料；这些结果不代表真实音乐语料的检索质量指标已达标，也不代表已经部署到公网。
 

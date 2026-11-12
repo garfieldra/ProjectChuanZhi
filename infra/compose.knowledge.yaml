@@ -2,7 +2,7 @@
 services:
   java-service:
     environment:
-      KNOWLEDGE_MAINTAINERS: ${KNOWLEDGE_MAINTAINERS:-}
+      KNOWLEDGE_MAINTAINER_IDS: ${KNOWLEDGE_MAINTAINER_IDS:-}
   agent-service:
     environment:
       KNOWLEDGE_MIN_SIMILARITY: ${KNOWLEDGE_MIN_SIMILARITY:-0.5}

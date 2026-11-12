@@ -11,10 +11,12 @@ services:
         condition: service_healthy
     environment:
       VITE_API_BASE_URL: /api
-      VITE_API_PROXY_TARGET: http://java-service:8080
+      VITE_API_PROXY_TARGET: http://account-api:8080
     networks:
-      - public
-      - internal
+      public:
+      internal:
+      account-proxy:
+        ipv4_address: 172.30.240.2
 
   java-service:
     build:
@@ -33,7 +35,19 @@ services:
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:-soundseek}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-soundseek}
-      KNOWLEDGE_MAINTAINERS: ${KNOWLEDGE_MAINTAINERS:-}
+      KNOWLEDGE_MAINTAINER_IDS: ${KNOWLEDGE_MAINTAINER_IDS:-}
+      AUTH_TRUSTED_PROXY_PATTERN: '172[.]30[.]240[.]2'
+      AUTH_MAIL_ENABLED: ${AUTH_MAIL_ENABLED:-false}
+      AUTH_MAIL_FROM: ${AUTH_MAIL_FROM:-}
+      AUTH_MAIL_ENCRYPTION_KEY: ${AUTH_MAIL_ENCRYPTION_KEY:-}
+      AUTH_PUBLIC_BASE_URL: ${AUTH_PUBLIC_BASE_URL:-http://localhost:5173}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_AUTH: ${SMTP_AUTH:-true}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      SMTP_SSL: ${SMTP_SSL:-false}
       AGENT_INTERNAL_BASE_URL: http://agent-service:8000
       APPLE_ITUNES_STOREFRONT: ${APPLE_ITUNES_STOREFRONT:-US}
       AGENT_INTERNAL_SERVICE_TOKEN: ${AGENT_INTERNAL_SERVICE_TOKEN}
@@ -54,8 +68,11 @@ services:
       retries: 12
       start_period: 20s
     networks:
-      - public
-      - internal
+      public:
+      internal:
+      account-proxy:
+        ipv4_address: 172.30.240.3
+        aliases: [account-api]
 
   agent-service:
     build:
@@ -259,6 +276,11 @@ services:
       - internal
 
 networks:
+  account-proxy:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.240.0/28
   public:
   internal:
     internal: true

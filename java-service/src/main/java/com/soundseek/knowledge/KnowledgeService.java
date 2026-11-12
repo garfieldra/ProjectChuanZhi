@@ -52,7 +52,7 @@ public class KnowledgeService {
     if(input==null || input.origin()==null || !Set.of("MANUAL_FILE","MANUAL_URL","MANUAL_EDIT").contains(input.origin()) || input.candidateItems()==null || input.candidateItems().isEmpty() || input.candidateItems().size()>100)throw new IllegalArgumentException("MANUAL_SUBMISSION_REQUIRED");
     String fingerprint=hash(write(input));
     // Serialize same-actor imports, including concurrent retries, using the existing account row.
-    db.queryForList("SELECT id FROM user_account WHERE email_normalized=? FOR UPDATE",actor);
+    db.queryForList("SELECT id FROM user_account WHERE id=UNHEX(REPLACE(?,'-','')) OR email_normalized=? FOR UPDATE",actor,actor);
     var previous=db.queryForList("SELECT content_hash,payload_json FROM knowledge_ingestion_job WHERE actor=? AND idempotency_key=?",actor,key);
     if(!previous.isEmpty()) {
       if(!fingerprint.equals(previous.getFirst().get("content_hash")))throw new IllegalStateException("IDEMPOTENCY_KEY_REUSED");

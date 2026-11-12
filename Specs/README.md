@@ -33,6 +33,10 @@ MusicBrainz 作品关系、Wikimedia 百科语境与 Last.fm 听众相似性三�
 
 当前产品对外只有一个统一 ReAct 音乐探索 Agent；早期文档中的多 Agent 或双 Agent 路由描述仅作历史设计，不能覆盖当前协作约定与统一运行时。
 
+## 账号系统文档
+
+现有身份与访客资产模型见 [账号身份认证与访客资产归并](./03-技术架构/22-账号身份认证与访客资产归并规格.md)；邮箱验证、恢复、会话撤销、维护授权与运维注销的目标方案见 [账号系统完善方案](../docs/account-system-design.md)（精简范围已实现，验收边界见文档）。
+
 ## 当前音乐知识库文档
 
 人工维护 RAG 已实现并与 SoundSeek 主干合并，当前入口依次为 [完整设计](../docs/rag-design.md)、[维护与启动](../docs/rag-maintenance.md)、[验证记录](../docs/rag-validation.md) 和 [浏览器验收](../docs/rag-browser-acceptance.md)。旧 `02-音乐数据/09`、`10` 保留历史设计与离线实验数据，不代表当前正式库已有条目。
