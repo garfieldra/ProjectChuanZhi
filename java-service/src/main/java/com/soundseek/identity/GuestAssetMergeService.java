@@ -22,6 +22,7 @@ public class GuestAssetMergeService {
       jdbc.update("UPDATE agent_run SET status='CANCELLED',completed_at=CURRENT_TIMESTAMP(3),updated_at=CURRENT_TIMESTAMP(3) WHERE id=UUID_TO_BIN(?)",run);
       jdbc.update("UPDATE conversation_message SET status='FAILED',text_content='登录后此未完成请求已停止，请重新发送。' WHERE agent_run_id=UUID_TO_BIN(?) AND status='RUNNING'",run);
     }
+    jdbc.update("UPDATE conversation_attachment SET guest_session_id=UUID_TO_BIN(?) WHERE guest_session_id=UUID_TO_BIN(?)", target.toString(), source.toString());
     // The target's existing save wins; all other saves keep their original provenance.
     jdbc.update("DELETE source FROM saved_song source JOIN saved_song target ON target.guest_session_id=UUID_TO_BIN(?) AND target.recording_id=source.recording_id WHERE source.guest_session_id=UUID_TO_BIN(?)", target.toString(), source.toString());
     jdbc.update("UPDATE saved_song SET guest_session_id=UUID_TO_BIN(?) WHERE guest_session_id=UUID_TO_BIN(?)", target.toString(), source.toString());

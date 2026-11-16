@@ -39,3 +39,6 @@ Demos/__pycache__/
 # Local Docker data and logs
 infra/volumes/
 logs/
+
+# Private chat image data
+data/attachments/

@@ -1,6 +1,6 @@
 from typing import Literal
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 
 def camel_case(name: str) -> str:
@@ -25,6 +25,12 @@ class CandidatePoolRequest(ApiModel):
 
 
 class ConversationAgentRequest(ApiModel):
+    image_attachments: list[dict] = Field(default_factory=list, max_length=64)
+    _image_cache: dict[str, str] = PrivateAttr(default_factory=dict)
+    document_attachments: list[dict] = Field(default_factory=list, max_length=64)
+    _document_cache: dict = PrivateAttr(default_factory=dict)
+    _document_reads: dict = PrivateAttr(default_factory=dict)
+    _document_sources: dict = PrivateAttr(default_factory=dict)
     request_id: UUID
     agent_run_id: UUID
     conversation_id: UUID

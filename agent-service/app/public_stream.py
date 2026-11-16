@@ -6,6 +6,8 @@ import re
 
 
 PUBLIC_TOOL_NAMES = {
+    "read_document": "上传文档阅读",
+    "search_document": "文档内容搜索",
     "search_web": "网络音乐搜索",
     "read_source": "公开资料精读",
     "research_musicbrainz": "MusicBrainz 作品关系研究",
@@ -24,6 +26,12 @@ PUBLIC_TOOL_NAMES = {
 def public_commentary(run_id: str, action: str, observation: dict | None = None) -> dict:
     """Build a safe research note without exposing model or tool scratch data."""
     observation = observation or {}
+    if action in {"read_document", "search_document"}:
+        if observation.get("status") != "success":
+            message = "这次文档操作没有取得新内容；我会使用已有资料，或调整读取范围，并保留资料边界。"
+        else:
+            message = "已读取上传资料中的相关文字；接下来会结合原文位置回答，并区分资料内容与外部事实。"
+        return {"runId": run_id, "phase": action, "status": "commentary", "message": message}
     count = next((int(observation[key]) for key in ("verifiedCount", "sourceCount", "outputCount", "count") if isinstance(observation.get(key), (int, float))), 0)
     notes = {
         "search_web": f"我已经从公开资料中找到{f' {count} 条' if count else ''}可用线索，接下来会核对它们是否真正支持你的问题。",

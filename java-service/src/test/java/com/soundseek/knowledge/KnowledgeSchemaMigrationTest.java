@@ -26,9 +26,16 @@ class KnowledgeSchemaMigrationTest {
     db.update("INSERT INTO guest_session(id,token_hash) VALUES(UUID_TO_BIN(?),?), (UUID_TO_BIN(?),?)",guest,"a".repeat(64),githubGuest,"b".repeat(64));
     db.update("INSERT INTO user_account(id,email_normalized,display_name,status,primary_guest_session_id) VALUES(UUID_TO_BIN(?),'legacy@example.invalid','Legacy','ACTIVE',UUID_TO_BIN(?)),(UUID_TO_BIN(?),'github-321@users.soundseek.local','Github','ACTIVE',UUID_TO_BIN(?))",user,guest,github,githubGuest);
     db.update("INSERT INTO auth_identity(id,user_id,provider,provider_subject,password_hash) VALUES(UUID_TO_BIN(UUID()),UUID_TO_BIN(?),'PASSWORD','legacy@example.invalid','preserved-test-hash'),(UUID_TO_BIN(UUID()),UUID_TO_BIN(?),'GITHUB','321',NULL)",user,github);
+    Flyway.configure().dataSource(mysql.getJdbcUrl(),mysql.getUsername(),mysql.getPassword())
+        .target(MigrationVersion.fromVersion("27")).load().migrate();
+    String image="aaaaaaaa-0000-4000-8000-000000000005";
+    db.update("INSERT INTO image_attachment(id,guest_session_id,file_name,content_type,byte_size,width,height) VALUES(UUID_TO_BIN(?),UUID_TO_BIN(?),'probe.jpg','image/jpeg',128,12,12)",image,guest);
     var merged=Flyway.configure().dataSource(mysql.getJdbcUrl(),mysql.getUsername(),mysql.getPassword()).load();
     merged.migrate();merged.validate();
-    assertEquals("26",merged.info().current().getVersion().toString());
+    assertEquals("28",merged.info().current().getVersion().toString());
+    assertEquals("IMAGE:READY:probe.jpg",db.queryForObject(
+        "SELECT CONCAT(kind,':',parse_status,':',file_name) FROM conversation_attachment WHERE id=UUID_TO_BIN(?) AND guest_session_id=UUID_TO_BIN(?)",
+        String.class,image,guest));
     assertNull(db.queryForObject("SELECT email_verified_at FROM user_account WHERE id=UUID_TO_BIN(?)",java.sql.Timestamp.class,user));
     assertNull(db.queryForObject("SELECT email_normalized FROM user_account WHERE id=UUID_TO_BIN(?)",String.class,github));
     assertEquals(0L,db.queryForObject("SELECT auth_version FROM user_account WHERE id=UUID_TO_BIN(?)",Long.class,user));

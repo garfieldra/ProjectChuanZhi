@@ -1,3 +1,4 @@
+import {ImageAttachments,ImageUploadButton,useImageAttachments} from './ImageAttachmentStrip'
 import { Fragment, useRef, useState, type FormEvent, type MouseEvent } from 'react'
 import { HomeHeader } from './HomeHeader'
 import { beginExploration, readHomeDraft, saveHomeDraft, type ExplorationEntry } from './landingEntry'
@@ -14,6 +15,7 @@ function ArrowIcon() {
 }
 
 export function HomePage({ onExplore, preloadWorkspace }: Props) {
+  const imageDraft=useImageAttachments()
   const [draft, setDraft] = useState(readHomeDraft)
   const [connecting, setConnecting] = useState(false)
   const [error, setError] = useState('')
@@ -28,15 +30,15 @@ export function HomePage({ onExplore, preloadWorkspace }: Props) {
   async function submit(event: FormEvent) {
     event.preventDefault()
     const content = draft.trim()
-    if (!content || submitting.current) return
+    if ((!content && !imageDraft.images.length) || !imageDraft.ready || submitting.current) return
     submitting.current = true; setConnecting(true); setError('')
-    if (!attempt.current || attempt.current.content !== content) attempt.current = { content, messageKey: crypto.randomUUID() }
+    if (!attempt.current || attempt.current.content !== content || JSON.stringify(attempt.current.attachmentIds||[])!==JSON.stringify(imageDraft.ids)) attempt.current = { content, attachmentIds:imageDraft.ids, messageKey: crypto.randomUUID() }
     try {
       const [entryResult, workspaceResult] = await Promise.allSettled([beginExploration(attempt.current), preloadWorkspace()])
       if (entryResult.status === 'rejected') throw entryResult.reason
       if (workspaceResult.status === 'rejected') throw new Error('探索页面暂时没有打开，你的输入已保留，请再试一次。')
       await onExplore(entryResult.value, content)
-      saveHomeDraft('')
+      saveHomeDraft('');imageDraft.clear()
     } catch (caught) {
       setError(caught instanceof Error && !/fetch|network|load failed/i.test(caught.message) ? caught.message : '暂时没有连接上寻声，你的输入已保留，请稍后重试。')
     } finally { submitting.current = false; setConnecting(false) }
@@ -67,17 +69,16 @@ export function HomePage({ onExplore, preloadWorkspace }: Props) {
       </section>
       <section className="home-entry" aria-label="开始一次音乐探索">
         <form onSubmit={event => void submit(event)} aria-busy={connecting}>
-          <div className="home-composer-frame">
+          <div className="home-composer-frame"><ImageAttachments images={imageDraft.images} onRemove={imageDraft.remove} onRetry={imageDraft.retry} disabled={connecting} />
             <label className="home-visually-hidden" htmlFor="home-prompt">告诉寻声，你最近想听什么？</label>
             <textarea id="home-prompt" ref={textarea} value={draft} onChange={event => updateDraft(event.target.value)} maxLength={2000} readOnly={connecting} placeholder="告诉寻声，你最近想听什么？" onFocus={() => { void preloadWorkspace().catch(() => {}) }} onKeyDown={event => {
               if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() }
-            }} aria-describedby={error ? 'home-entry-error' : 'home-entry-hint'} />
-            <div className="home-composer-toolbar">
-              <p id="home-entry-hint">从喜欢的歌、某位艺人，或此刻的心情开始</p>
-              <button className="home-submit" type="submit" disabled={!draft.trim() || connecting} aria-label={connecting ? '正在开启探索' : '开始探索'}>{connecting ? <><span className="home-connecting-mark" aria-hidden="true" />正在开启探索</> : <>开始探索<ArrowIcon /></>}</button>
+            }} aria-describedby={error ? 'home-entry-error' : undefined} />
+            <div className="home-composer-toolbar"><ImageUploadButton disabled={connecting} onFiles={files=>void imageDraft.add(files)} />
+              <button className="home-submit" type="submit" disabled={(!draft.trim()&&!imageDraft.images.length)||!imageDraft.ready||connecting} aria-label={connecting ? '正在开启探索' : '开始探索'}>{connecting ? <><span className="home-connecting-mark" aria-hidden="true" />正在开启探索</> : <>开始探索<ArrowIcon /></>}</button>
             </div>
           </div>
-          {error ? <p className="home-entry-error" id="home-entry-error" role="alert">{error}</p> : null}
+          {imageDraft.error&&<p className="home-entry-error" role="alert">{imageDraft.error}</p>}{error ? <p className="home-entry-error" id="home-entry-error" role="alert">{error}</p> : null}
           <span className="home-visually-hidden" role="status">{connecting ? '正在为你开启音乐探索，请稍候。' : ''}</span>
         </form>
         <div className="home-prompts" aria-label="试试这些音乐话题">

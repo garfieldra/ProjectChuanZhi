@@ -20,7 +20,7 @@ def runtime_and_state(active=True):
     runtime.model = object()
     answer = '依据提供的合成测试材料，这首测试作品采用木吉他与人声的样本编制。这里只验证资料引用链路，不将测试内容当作真实音乐事实。对于音色、情绪与表达效果，可以在这一有限材料范围内提出解释，但不能据此推断具体录音参数、创作者意图或发行历史。' * 3
     claim = EvidenceClaim(statement=evidence['statement'], claim_type='FACT', dimension='样本编制', evidence_refs=['S1'], status='supported')
-    async def invoke(schema, prompt):
+    async def invoke(schema, prompt, request=None):
         if schema is MusicAnalysisDraft:
             return MusicAnalysisDraft(core_judgment='依据合成测试材料，可以确认测试作品的样本编制并保留解释边界。', answer=answer, claims=[claim])
         assert schema is MusicAnalysisReview

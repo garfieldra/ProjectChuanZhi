@@ -27,6 +27,8 @@ services:
     build:
       context: ../java-service
       target: runtime
+    volumes:
+      - image-attachment-data:/app/data/attachments
     environment:
       SPRING_PROFILES_ACTIVE: docker
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE}
@@ -184,6 +186,7 @@ networks:
     internal: true
 
 volumes:
+  image-attachment-data:
   agent-model-cache:
   caddy-config:
   caddy-data:
