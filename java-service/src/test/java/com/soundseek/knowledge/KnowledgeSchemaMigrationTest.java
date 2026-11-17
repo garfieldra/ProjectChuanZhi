@@ -30,9 +30,17 @@ class KnowledgeSchemaMigrationTest {
         .target(MigrationVersion.fromVersion("27")).load().migrate();
     String image="aaaaaaaa-0000-4000-8000-000000000005";
     db.update("INSERT INTO image_attachment(id,guest_session_id,file_name,content_type,byte_size,width,height) VALUES(UUID_TO_BIN(?),UUID_TO_BIN(?),'probe.jpg','image/jpeg',128,12,12)",image,guest);
+    String conversation="aaaaaaaa-0000-4000-8000-000000000006",memory="aaaaaaaa-0000-4000-8000-000000000007";
+    db.update("INSERT INTO conversation(id,guest_session_id,title,status) VALUES(UUID_TO_BIN(?),UUID_TO_BIN(?),'Legacy music preferences','ACTIVE')",conversation,guest);
+    db.update("INSERT INTO music_preference_memory(id,guest_session_id,content,source_conversation_id,confirmation_status) VALUES(UUID_TO_BIN(?),UUID_TO_BIN(?),'保留原有音乐偏好',UUID_TO_BIN(?),'CONFIRMED')",memory,guest,conversation);
     var merged=Flyway.configure().dataSource(mysql.getJdbcUrl(),mysql.getUsername(),mysql.getPassword()).load();
     merged.migrate();merged.validate();
-    assertEquals("28",merged.info().current().getVersion().toString());
+    assertEquals("29",merged.info().current().getVersion().toString());
+    assertEquals("保留原有音乐偏好",db.queryForObject("SELECT content FROM music_preference_memory WHERE id=UUID_TO_BIN(?)",String.class,memory));
+    assertEquals(conversation,db.queryForObject("SELECT BIN_TO_UUID(source_conversation_id) FROM music_preference_memory WHERE id=UUID_TO_BIN(?)",String.class,memory));
+    assertNull(db.queryForObject("SELECT source_message_id FROM music_preference_memory WHERE id=UUID_TO_BIN(?)",byte[].class,memory));
+    db.update("INSERT INTO music_preference_memory(id,guest_session_id,content,source_conversation_id,confirmation_status) VALUES(UUID_TO_BIN(UUID()),UUID_TO_BIN(?),'手动添加且不创建空对话',NULL,'CONFIRMED')",guest);
+    assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM music_preference_memory WHERE guest_session_id=UUID_TO_BIN(?) AND source_conversation_id IS NULL",Integer.class,guest));
     assertEquals("IMAGE:READY:probe.jpg",db.queryForObject(
         "SELECT CONCAT(kind,':',parse_status,':',file_name) FROM conversation_attachment WHERE id=UUID_TO_BIN(?) AND guest_session_id=UUID_TO_BIN(?)",
         String.class,image,guest));

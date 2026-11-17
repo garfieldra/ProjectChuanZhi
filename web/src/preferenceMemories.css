@@ -1,0 +1,19 @@
+.preference-memory-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.preference-memory-toolbar small, .preference-memory-meta { color: var(--ss-muted, #77736c); font-size: 12px; }
+.preference-memory-toolbar .settings-secondary { padding: 7px 12px; font-size: 12px; }
+.preference-memory-meta { display: block; margin-bottom: 10px; }
+.preference-memory-editor { display: grid; gap: 10px; padding: 14px 0; }
+.preference-memory-editor label { font-size: 13px; color: var(--ss-ink, #242320); }
+.preference-memory-editor textarea { box-sizing: border-box; width: 100%; min-height: 108px; max-height: 260px; resize: vertical; padding: 10px 12px; border: 1px solid var(--ss-border, #cfc9c0); border-radius: 9px; background: var(--ss-surface, #fcfbf8); color: var(--ss-ink, #242320); font: inherit; line-height: 1.7; }
+.preference-memory-editor small { color: var(--ss-muted, #77736c); font-size: 12px; }
+.preference-memory-editor > div { display: flex; gap: 8px; flex-wrap: wrap; }
+.preference-memory-editor button, .remember-preference > button { min-height: 36px; padding: 6px 12px; border: 1px solid #d7d2c9; border-radius: 8px; background: transparent; color: #77736c; font: inherit; font-size: 12px; cursor: pointer; }
+.preference-memory-editor button.settings-primary { background: var(--ss-accent, #a64b3c); color: #fffdf8; border-color: var(--ss-accent, #a64b3c); }
+.remember-preference { max-width: 100%; margin: 6px 0 16px auto; font-size: 13px; }
+.remember-preference > button { display: block; margin-left: auto; border-color: transparent; }
+.remember-preference > button:hover { border-color: #d7d2c9; color: var(--ss-accent, #a64b3c); }
+.remember-preference > p { font-size: 12px; color: var(--ss-muted, #77736c); overflow-wrap: anywhere; }
+.remember-preference > [role=alert] { color: #a64b3c; }
+.preference-memory-editor :is(button, textarea):focus-visible { outline: 2px solid var(--ss-accent, #a64b3c); outline-offset: 2px; }
+.preference-memory-editor button:disabled { opacity: .55; cursor: default; }
+.settings-memories li > p { white-space: pre-wrap; }

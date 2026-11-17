@@ -5,6 +5,7 @@ import { MusicLibrary } from './MusicLibraryPanel'
 import { MusicLibraryProvider, useMusicLibrary, SaveSongButton, type SavedSong } from './musicLibraryStore'
 import { VinylPlayer } from './VinylPlayer'
 import { AccountDialog } from './AccountDialog'
+import { RememberPreference } from './PreferenceMemories'
 import type { AuthSession } from './auth'
 import { BrandMark } from './BrandMark'
 import { FormEvent, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -386,6 +387,7 @@ function ConversationWorkspace({ initialConversationId, initialContent, onHome }
           return <TimedMessage key={message.id} id={message.id} createdAt={message.createdAt} animate={newCardIds.has(message.id)}>
             {message.role === 'USER' ? <MessageImages ids={message.attachmentIds} /> : null}
             {content}
+            {message.role === 'USER' && message.type === 'USER_TEXT' && message.status === 'COMPLETED' && message.content?.trim() && current && <RememberPreference content={message.content} source={{ sourceConversationId: current.id, sourceMessageId: message.id }} />}
             {message.cardType !== 'MUSIC_ANALYSIS' && <KnowledgeReferences payload={message.cardPayloadJson} />}
           </TimedMessage>
         })}
