@@ -1,5 +1,7 @@
 package com.soundseek.agent;
 
+import static com.soundseek.tournament.application.CandidatePoolApplicationService.minimumCandidateCount;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.soundseek.agent.application.PreferenceEventQueryService;
@@ -43,7 +45,7 @@ public class CandidatePoolGateway {
       body.put("requestId", requestId.toString());
       body.put("guestId", guestId);
       body.put("size", size);
-      body.put("candidateCount", size * 2);
+      body.put("candidateCount", minimumCandidateCount(size));
       body.put("preferenceText", preference);
       var artists = body.putArray("seedArtistIds");
       artistIds.forEach(id -> artists.add(id.toString()));

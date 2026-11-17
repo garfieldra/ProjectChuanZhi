@@ -13,6 +13,8 @@ class FakeCatalog:
     def __init__(self, items):
         self.items = items
         self.artist_filters = []
+        self.catalog_reads = []
+        self.artist_mbids = {item["artistId"]: str(uuid4()) for item in items}
 
     async def search_recordings(self, _preference, artist_ids):
         self.artist_filters.append(list(artist_ids))
@@ -21,11 +23,21 @@ class FakeCatalog:
     async def resolve_and_import(self, _hints):
         return []
 
-    async def resolve_artist_candidates(self, names):
-        return []
+    async def selected_artists(self, ids):
+        return [{"id": str(artist_id), "mbid": self.artist_mbids[str(artist_id)],
+                 "name": next(item["artistName"] for item in self.items if item["artistId"] == str(artist_id))}
+                for artist_id in ids]
 
-    async def discover_artist_recordings(self, _artists, _per_artist_limit=32):
-        return []
+    async def resolve_artist_candidates(self, names):
+        return [{"mention": name, "candidates": [{"mbid": mbid, "name": name, "score": 100}]}
+                for name in names for artist_id, mbid in self.artist_mbids.items()
+                if any(item["artistId"] == artist_id and item["artistName"] == name for item in self.items)]
+
+    async def discover_artist_recordings(self, artists, per_artist_limit=32):
+        self.catalog_reads.append((artists, per_artist_limit))
+        selected_mbids = {artist["mbid"] for artist in artists}
+        return [item | {"status": "RESOLVED", "recordingId": item["id"], "recordingMbid": str(uuid4())}
+                for item in self.items if self.artist_mbids[item["artistId"]] in selected_mbids]
 
 
 class FakeWeb:
@@ -84,7 +96,7 @@ def test_literal_artist_extraction_handles_unspaced_chinese_conjunctions():
 
 
 @pytest.mark.asyncio
-async def test_locked_mode_filters_other_artists_and_keeps_short_reserve_safe():
+async def test_selected_artist_does_not_fill_short_pool_with_other_artists():
     allowed, other = uuid4(), uuid4()
     catalog = FakeCatalog(recordings(allowed, "Allowed", 16) + recordings(other, "Other", 16))
     selector = DeepSeekCandidateSelector()
@@ -99,11 +111,13 @@ async def test_locked_mode_filters_other_artists_and_keeps_short_reserve_safe():
     state = await graph.ainvoke({"request": request})
 
     assert state["intent_policy"].intent_mode == "ARTIST_LOCKED"
-    assert catalog.artist_filters[0] == [allowed]
+    assert catalog.artist_filters == []
+    assert catalog.catalog_reads[0][1] is None
     assert state["result"].status == "insufficient_candidates"
     assert len(state["result"].recording_ids) == 16
     assert state["result"].termination_reason == "INSUFFICIENT_VERIFIED_CANDIDATES"
-    assert all(item["artistId"] == str(allowed) for item in state["ranked"])
+    assert all(item["artistId"] == str(allowed) for item in state["recordings"])
+    assert "至少 24 首" in state["result"].warnings[0]["message"]
 
 
 @pytest.mark.asyncio
@@ -132,24 +146,49 @@ async def test_ambiguous_named_artist_blocks_generation_until_confirmation():
 
 
 @pytest.mark.asyncio
-async def test_seeded_mode_searches_open_catalog_instead_of_locking_seed():
-    seed, other = uuid4(), uuid4()
-    catalog = FakeCatalog(recordings(seed, "Seed", 16) + recordings(other, "Other", 16))
+async def test_named_artists_keep_full_catalog_and_interleave_candidates():
+    first, second, other = uuid4(), uuid4(), uuid4()
+    first_tracks = recordings(first, "李志", 38)
+    duplicate = first_tracks[0] | {"id": str(uuid4()), "title": first_tracks[0]["title"].lower()}
+    catalog = FakeCatalog(first_tracks + [duplicate] + recordings(second, "陈粒", 35) + recordings(other, "Other", 20))
+    web = FakeWeb()
     selector = DeepSeekCandidateSelector()
     selector.model = None
-    graph = build_candidate_pool_graph(catalog, FakeWeb(), FakeKnowledge(), selector)
+    graph = build_candidate_pool_graph(catalog, web, FakeKnowledge(), selector)
     request = CandidatePoolRequest(
-        requestId=uuid4(), guestId="fixture", size=16,
-        preferenceText="我喜欢这个歌手，也想找一些相近的音乐",
-        seedArtistIds=[seed],
+        requestId=uuid4(), guestId="fixture", size=32,
+        preferenceText="用李志和陈粒的歌曲办一场世界杯",
     )
 
     state = await graph.ainvoke({"request": request})
 
-    assert state["intent_policy"].intent_mode == "ARTIST_SEEDED"
-    assert catalog.artist_filters[0] == []
-    assert len(state["result"].recording_ids) == 32
-    assert state["result"].termination_reason == "TARGET_REACHED_AND_VALIDATED"
+    assert state["intent_policy"].intent_mode == "ARTIST_LOCKED"
+    assert state["result"].status == "ready_for_confirmation"
+    assert len(state["result"].recording_ids) == 73
+    assert state["result"].reserve_size == 41
+    assert [item["artistName"] for item in state["recordings"][:4]] == ["李志", "陈粒", "李志", "陈粒"]
+    assert catalog.artist_filters == [] and web.calls == 0
+    assert state["result"].items[0].discovery_sources[0]["provider"] == "musicbrainz"
+
+
+@pytest.mark.parametrize(("size", "minimum"), [(16, 24), (32, 48)])
+@pytest.mark.asyncio
+async def test_named_pool_rejects_one_song_below_required_count(size, minimum):
+    catalog = FakeCatalog(recordings(uuid4(), "陈粒", minimum - 1))
+    selector = DeepSeekCandidateSelector()
+    selector.model = None
+    web = FakeWeb()
+    graph = build_candidate_pool_graph(catalog, web, FakeKnowledge(), selector)
+    request = CandidatePoolRequest(
+        requestId=uuid4(), guestId="fixture", size=size,
+        preferenceText="用陈粒的歌曲办一场世界杯",
+    )
+
+    state = await graph.ainvoke({"request": request})
+
+    assert state["result"].status == "insufficient_candidates"
+    assert str(minimum) in state["result"].candidate_summary
+    assert web.calls == 0
 
 
 def test_explicit_lock_is_not_overridden_by_model_enrichment():
@@ -265,19 +304,19 @@ async def test_rerank_contract_preserves_pool_and_exposes_explanation_metadata()
 
     result = state["result"]
     assert result.status == "ready_for_confirmation"
-    assert len(result.items) == 32
+    assert len(result.items) == 24
     assert all(item.ranking_reason and item.selection_factors for item in result.items)
     assert all(item.explanation_status == "MODEL_GENERATED" for item in result.items)
     assert [item.pool_role for item in result.items[:16]] == ["MAIN"] * 16
-    assert [item.pool_role for item in result.items[16:]] == ["RESERVE"] * 16
+    assert [item.pool_role for item in result.items[16:]] == ["RESERVE"] * 8
 
 
-def test_quality_gate_blocks_short_active_pool_and_warns_short_reserve():
+def test_quality_gate_blocks_short_reserve():
     artist = uuid4()
     request = CandidatePoolRequest(requestId=uuid4(), guestId="fixture", size=16, preferenceText="夜晚散步的中文独立音乐")
     state = {"request": request, "recordings": [item | {"trustState": "CATALOG_IMPORTED", "reason": "与夜晚散步的克制氛围相符"} for item in recordings(artist, "Artist", 18)]}
     gate = _validate_candidate_quality(state)
-    assert gate["passed"]
+    assert not gate["passed"]
     assert any(item["code"] == "RESERVE_CANDIDATES_INSUFFICIENT" for item in gate["issues"])
     state["recordings"] = state["recordings"][:15]
     gate = _validate_candidate_quality(state)

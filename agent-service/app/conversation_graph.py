@@ -858,7 +858,7 @@ Claim（claim_index 是数组下标）：{json.dumps([item.model_dump() for item
             raise RuntimeError("CANDIDATE_POOL_GRAPH_MISSING")
         size = 16 if pool_size <= 16 else 32
         pool_request = CandidatePoolRequest(
-            request_id=uuid4(), guest_id=guest_id, size=size, candidate_count=size * 2,
+            request_id=uuid4(), guest_id=guest_id, size=size,
             preference_text=preference_text, confirmed_artists=confirmed_artists or [],
         )
         pool_state = await self.candidate_graph.ainvoke({"request": pool_request}, {"recursion_limit": 128})
@@ -2368,7 +2368,7 @@ def _candidate_pool_card(result: CandidatePoolResult, pool_state: dict, preferen
         return ConversationCardIntent(
             message_type="RECOMMENDATION_CARD", card_type="CANDIDATE_POOL_INSUFFICIENT",
             payload={"preferenceText": preference_text, "summary": result.candidate_summary, "warnings": result.warnings},
-        ), f"我已完成在线发现与身份核验，但{warning} 你可以补充艺人、语言、年代或场景后继续。"
+        ), warning
     recordings = {str(item.get("id")): item for item in pool_state.get("recordings", [])}
     items = []
     for item in result.items:

@@ -51,7 +51,7 @@
 
 | 术语 | 含义 |
 | --- | --- |
-| `orderedItems` | Agent 返回并经 Java 复核后的完整有序候选，目标为赛事规模的两倍 |
+| `orderedItems` | Agent 返回并经 Java 复核后的完整有序候选，16 首赛事至少 24 首，32 首赛事至少 48 首。指定艺人时保留去重后的全量目录 |
 | `activeItems` | 当前将要进入世界杯的前 16/32 首 |
 | `reserveItems` | 当前 active 之后的候补队列 |
 | `excludedIds` | 用户本次明确移除的 Recording ID 集合 |
@@ -62,12 +62,12 @@
 
 ## 4. 已确定的产品规则
 
-1. 16 首赛事的目标候选量为 32；32 首赛事的目标候选量为 64。
-2. Agent 可以跨艺人生成候选，起点艺人只是线索，不构成同艺人限制。
+1. 16 首赛事至少需要 24 首不同候选，32 首赛事至少需要 48 首。生成时未达门槛不得进入确认，开赛仍采用用户确认的 16 或 32 首。
+2. 指定艺人时以通过身份核验的 MusicBrainz 录音目录生成候选。开放偏好由 Agent 自主探索多个艺人。
 3. 最终进入页面的每首歌都必须具有 Java 内部 `recordingId`；Tavily 文本或模型记忆不能直接进入候选池。
 4. 网络发现的歌曲必须先经 Java 调用 MusicBrainz 消歧并幂等导入。
-5. 达到目标两倍数量时，active 与 reserve 数量相等；不足两倍但不少于开赛规模时允许降级确认，并展示候补不足警告。
-6. 少于 16/32 首时不得创建赛事，页面回到可修改输入的不足状态。
+5. 开放偏好生成 24 或 48 首，其中 8 或 16 首作为候补。指定艺人时可以保留更多候补。
+6. 未达到 24/48 首候选门槛时，页面提示调整输入。确认页开赛名单需要恰好 16/32 首。
 7. 用户确认前不创建 Tournament、Entry 或 Match。
 8. 候选调整全部在浏览器内完成；移除歌曲不重新调用 Agent，也不产生额外模型成本。
 9. 用户确认时，Java 必须重新校验最终 active IDs，不能信任浏览器状态。
@@ -246,7 +246,7 @@ X-Request-Id: <uuid>
 - ID 唯一且已由 Java 复核存在；
 - `reserveSize = max(0, items.length - size)`；
 - `ready_for_confirmation` 时 `items.length >= size`；
-- 目标长度为 `size * 2`，但允许带 `RESERVE_CANDIDATES_INSUFFICIENT` 降级；
+- 长度至少为 `size + size / 2`，数量不足返回 `insufficient_candidates`；
 - Java 使用自身 Recording 数据补齐歌名、艺人、专辑和封面，不信任模型返回这些事实。
 
 候选不足响应仍使用成功 HTTP 状态和业务状态：
@@ -319,7 +319,7 @@ Content-Type: application/json
 
 1. 使用 Supervisor ReAct 自主决定是否调用本地目录、Milvus、Tavily、MusicBrainz 解析与重排工具。
 2. 禁止以固定 `catalog → web → MusicBrainz → rank` 顺序无条件执行。
-3. 本地数量不足目标两倍时，在允许提交短 reserve 前必须至少尝试一次外部扩展。
+3. 开放偏好不足时，继续发现与核验，直到数量达标或达到运行预算。
 4. 工具失败作为 observation 回写，不得直接让整个生成请求崩溃；只要仍有足够 active 候选即可降级完成。
 5. 每轮动作来自白名单并受迭代数、网络次数、超时和成本预算控制。
 6. 最终输出只含规范 recordingIds、简短理由、候选总结和警告。
@@ -383,7 +383,7 @@ CandidatePoolExperience
 ### 14.2 Java 集成测试
 
 - Agent 返回重复、未知或少于 size 的 ID 时 Java 拒绝；
-- 32/64 项候选均按原顺序补齐展示信息；
+- 24/48 项或指定艺人的更多候选均按原顺序补齐展示信息；
 - 最终只写入 active 的 16/32 首；
 - 跨艺人 Entry 快照正确；
 - 相同幂等键不会创建两场赛事；
@@ -392,7 +392,7 @@ CandidatePoolExperience
 ### 14.3 Agent 测试
 
 - 本地目录足够时可以不调用网络工具；
-- 本地不足两倍时，提交前会尝试外部扩展；
+- 开放偏好数量不足时，会尝试外部扩展；
 - MusicBrainz 超时会形成失败 observation 并触发重规划；
 - 网络歌曲未解析成 recordingId 时不会进入结果；
 - 16/32 首开赛数量不足时返回 insufficient；
@@ -414,7 +414,7 @@ CandidatePoolExperience
 
 - [ ] 用户无需理解 Agent 或工具即可完成“输入方向 → 调整候选 → 开赛”；
 - [ ] 16 首赛事正常返回 32 首时，页面提供 16 个 active 和 16 个 reserve；
-- [ ] 32 首赛事正常返回 64 首时，页面提供 32 个 active 和 32 个 reserve；
+- [ ] 32 首开放偏好赛事正常返回 48 首时，页面提供 32 首参赛与 16 首候补；
 - [ ] 短 reserve 降级不会阻塞已有合法赛事，但影响被清楚说明；
 - [ ] 任意移除与恢复操作均确定、可逆且不产生新模型调用；
 - [ ] 最终提交精确、唯一且已验证的 16/32 个 Recording ID；

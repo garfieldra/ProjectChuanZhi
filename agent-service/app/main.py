@@ -74,7 +74,7 @@ _ACTION_PROGRESS = {
     "search_domestic_content": ("discover_domestic", "正在补充中文社区音乐资料"),
     "resolve_musicbrainz": ("verify_musicbrainz", "正在通过 MusicBrainz 核验歌曲身份"),
     "search_catalog": ("search_catalog", "正在整理已核验的本地目录"),
-    "expand_artist_catalog": ("expand_artist_catalog", "正在批量核验已提及艺人的作品"),
+    "expand_artist_catalog": ("expand_artist_catalog", "正在分页读取指定艺人的 MusicBrainz 目录"),
     "search_knowledge": ("knowledge_context", "正在补充歌曲主题与文化语境"),
     "analyze_tournament": ("analyze_matches", "正在归纳本场的关键选择轨迹"),
     "draft_report": ("draft_report", "正在生成你的音乐偏好报告"),
@@ -105,7 +105,7 @@ _PLAN_ACTIONS = {
     "resolve_named_entities": ("核验艺人身份", "检查用户提到的艺人及可能歧义"),
     "request_clarification": ("等待用户确认", "存在会影响候选正确性的身份歧义"),
     "search_catalog": ("检查规范歌曲目录", "读取已核验曲目作为可用补充"),
-    "expand_artist_catalog": ("扩展明确艺人的作品", "从公开音乐目录批量发现并核验作品"),
+    "expand_artist_catalog": ("读取指定艺人目录", "逐页核验艺人录音并去重"),
     "search_web": ("搜索公开音乐资料", "从网络寻找歌曲、艺人及相关音乐语境"),
     "read_source": ("精读关键来源", "提取能够支持创作背景、制作信息或核心判断的正文证据"),
     "research_musicbrainz": ("核对音乐目录关系", "读取作品版本、创作署名与关联实体"),
@@ -151,8 +151,9 @@ def _plan_event(request_id, state: dict, workflow: str, current_completed: bool 
     items = items[-5:]
     count = len(state.get("recordings", []))
     if workflow == "candidate":
-        target = state.get("request").size * 2 if state.get("request") else 0
-        goal, summary = f"为 {target // 2} 首赛事准备 {target} 首可核验候选", f"已核验 {count} / {target} 首；计划会随搜索结果继续调整。"
+        request = state["request"]
+        target = request.minimum_candidate_count
+        goal, summary = f"为 {request.size} 首赛事准备至少 {target} 首候选", f"已核验 {count} 首，最低需要 {target} 首。"
     elif workflow == "report":
         goal, summary = "基于本场歌曲世界杯生成偏好报告", "计划正依据赛事事实、外部证据和审查结果滚动调整。"
     else:

@@ -9,7 +9,8 @@ import { RememberPreference } from './PreferenceMemories'
 import type { AuthSession } from './auth'
 import { BrandMark } from './BrandMark'
 import { FormEvent, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { CandidateItem, CandidatePoolResponse } from './candidatePool'
+import type { CandidateItem } from './candidatePool'
+import { CandidateReserveList } from './CandidateReserveList'
 import { enqueueAgentRun, followAgentRun, progressMetricsText, projectResponseStream, publicProgress, normalizePlanHistory, type AgentRunEvent, type AgentRunPlan, type AgentRunProgress } from './agentRunStream'
 import { playbackLabel } from './listening'
 import { apiFetch } from './apiClient'
@@ -65,7 +66,6 @@ async function createAndWaitForReport(tournamentId: string, onProgress: (item: P
   return report
 }
 
-async function queuedRun<T>(path:string,options:RequestInit,onProgress:(item:Progress)=>void,onPlan:(item:Plan)=>void,onRunId?:(runId:string|null)=>void):Promise<T>{const queued=await enqueueAgentRun(path,options);onRunId?.(queued.runId);try{const completed=await followAgentRun<T>(queued.runId,{onProgress,onPlan});if(completed.status==='CANCELLED')throw new Error('已停止本轮任务');if(!completed.result)throw new Error('本轮没有返回可用结果');return completed.result}finally{onRunId?.(null)}}
 
 export type ConversationAppProps = { initialConversationId?: string; initialContent?: string; onHome?: () => void }
 
@@ -109,7 +109,6 @@ function ConversationWorkspace({ initialConversationId, initialContent, onHome }
   const [runElapsedMs, setRunElapsedMs] = useState(0)
   const [collapsed, setCollapsed] = useState(false)
   const [notice, setNotice] = useState('')
-  const [candidateRun, setCandidateRun] = useState<{ size: 16 | 32; preferenceText: string } | null>(null)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [conversationMenuId, setConversationMenuId] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -144,7 +143,7 @@ function ConversationWorkspace({ initialConversationId, initialContent, onHome }
   },[messages])
   const bootStarted = useRef(false)
   useEffect(() => { if (!bootStarted.current) { bootStarted.current = true; void boot() } }, [])
-  useEffect(() => { if(libraryOpen || location.hash.startsWith('#message-'))return; timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: document.documentElement.dataset.reduceMotion === 'true' || window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' }) }, [messages, pending, candidateRun, streamingResponse])
+  useEffect(() => { if(libraryOpen || location.hash.startsWith('#message-'))return; timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: document.documentElement.dataset.reduceMotion === 'true' || window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' }) }, [messages, pending, streamingResponse])
 
   function recordPlan(next: Plan) {
     setPlan(previous => !previous || next.revision >= previous.revision ? next : previous)
@@ -218,7 +217,7 @@ function ConversationWorkspace({ initialConversationId, initialContent, onHome }
     try { const created = await api<Conversation>('/conversations', { method: 'POST' }); setConversations(previous => [created, ...previous]); setCurrent(created); loadedConversation.current = created.id; knownMessages.current = new Set(); setNewCardIds(new Set()); setMessages([]); setProgress([]); setPlan(null); setPlanHistory([]); setStreamingResponse(''); setCurrentRunId(null); setQueuedFollowUp(null); setInterventionUsed(false); setNotice(''); setMobileSidebarOpen(false); await refreshMemory(created.id) } catch (error) { setNotice(friendlyError(error)) }
   }
   async function open(conversation: Conversation) {
-    if (pending || candidateRun) return
+    if (pending) return
     try { setProgress([]); setPlan(null); setPlanHistory([]); setStreamingResponse(''); setQueuedFollowUp(null); setInterventionUsed(false); await Promise.all([refreshMessages(conversation.id), refreshMemory(conversation.id)]); setCurrent(conversation); setNotice(''); setMobileSidebarOpen(false); setConversationMenuId(null) } catch (error) { setNotice(friendlyError(error)) }
   }
   async function renameConversation(conversation: Conversation) {
@@ -295,19 +294,24 @@ function ConversationWorkspace({ initialConversationId, initialContent, onHome }
       } else runId = null
     }
   }
-  async function sendContent(content: string) {
-    if ((!content&&!imageDraft.images.length) || !imageDraft.ready || !current || candidateRun) return
+  async function sendContent(content: string, candidateSize?: 16 | 32) {
+    if (!current || (candidateSize ? !content : ((!content && !imageDraft.images.length) || !imageDraft.ready))) return
     if(location.hash.startsWith('#message-'))history.replaceState({},'',location.pathname+location.search)
-    if (pending) { await queueNextMessage(content); return }
-    const attachmentIds=imageDraft.ids,selectedImages=imageDraft.images;
+    if (pending) {
+      if (!candidateSize) await queueNextMessage(content)
+      return
+    }
+    const attachmentIds = candidateSize ? [] : imageDraft.ids
+    const selectedImages = imageDraft.images
     const clientId = crypto.randomUUID(); const optimistic: Message = { id: clientId, role: 'USER', type: 'USER_TEXT', content, attachmentIds, status: 'COMPLETED', sequenceNumber: Date.now(), createdAt: new Date().toISOString() }
-    setMessages(previous => [...previous, optimistic]); setDraft(''); setPending(true); setProgress([]); setPlan(null); setPlanHistory([]); setStreamingResponse(''); setCollapsed(false); setNotice('')
+    setMessages(previous => [...previous, optimistic]); if (!candidateSize) setDraft(''); setPending(true); setProgress([]); setPlan(null); setPlanHistory([]); setStreamingResponse(''); setCollapsed(false); setNotice('')
     try {
-      const queued = await enqueueAgentRun(`/conversations/${current.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': clientId }, body: JSON.stringify({ content,attachmentIds }) })
-      imageDraft.clear();setCurrentRunId(queued.runId)
+      const queued = await enqueueAgentRun(`/conversations/${current.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': clientId }, body: JSON.stringify({ content, attachmentIds, candidateSize }) })
+      if (!candidateSize) imageDraft.clear()
+      setCurrentRunId(queued.runId)
       await followConversationRunChain(queued.runId)
       await Promise.all([refreshMessages(), refreshMemory()]); const refreshed = await api<Conversation[]>('/conversations'); setConversations(refreshed); setCurrent(refreshed.find(item => item.id === current.id) ?? current)
-    } catch (error) { setMessages(previous => previous.filter(item => item.id !== clientId)); setDraft(content);imageDraft.restore(selectedImages.map(image=>({...image,url:`/api/v1/attachments/${image.id}/content`}))); setNotice(friendlyError(error)) } finally { setStreamingResponse(''); setCurrentRunId(null); setQueuedFollowUp(null); setInterventionUsed(false); setPending(false); setCollapsed(true) }
+    } catch (error) { setMessages(previous => previous.filter(item => item.id !== clientId)); if (!candidateSize) { setDraft(content); imageDraft.restore(selectedImages.map(image=>({...image,url:`/api/v1/attachments/${image.id}/content`}))) } setNotice(friendlyError(error)) } finally { setStreamingResponse(''); setCurrentRunId(null); setQueuedFollowUp(null); setInterventionUsed(false); setPending(false); setCollapsed(true) }
   }
   async function compressConversationMemory() {
     if (!current || runActive || compressingMemory || !memory?.manualCompressionAvailable) return
@@ -330,10 +334,10 @@ function ConversationWorkspace({ initialConversationId, initialContent, onHome }
   }
   function startCandidateRun(size: 16 | 32, preferenceText: string) {
     if (!preferenceText.trim()) { setNotice('先描述一下你想放进世界杯的音乐偏好。'); return }
-    setCandidateRun({ size, preferenceText }); setProgress([]); setPlan(null); setPlanHistory([]); setCollapsed(false); setNotice('')
+    void sendContent(preferenceText.trim(), size)
   }
   async function requestExplorationReport() {
-    if (!current || pending || candidateRun) return
+    if (!current || pending) return
     setPending(true); setProgress([]); setPlan(null); setPlanHistory([]); setStreamingResponse(''); setCollapsed(false); setNotice('')
     try {
       const queued = await enqueueAgentRun(`/conversations/${current.id}/exploration-report`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() } })
@@ -344,9 +348,9 @@ function ConversationWorkspace({ initialConversationId, initialContent, onHome }
   }
   const displayMessages = useMemo(() => messages.filter(message => message.type !== 'AGENT_RUN'), [messages])
   const visibleConversations = useMemo(() => conversations.filter(item => (showArchived ? item.status === 'ARCHIVED' : item.status === 'ACTIVE') && item.title.toLocaleLowerCase().includes(conversationSearch.trim().toLocaleLowerCase())), [conversations, showArchived, conversationSearch])
-  const runActive = pending || Boolean(candidateRun)
+  const runActive = pending
   const hasRunState = runActive || Boolean(plan) || progress.length > 0
-  const composerLocked = !current || Boolean(candidateRun) || (runActive && (!currentRunId || Boolean(queuedFollowUp) || interventionUsed))
+  const composerLocked = !current || (runActive && (!currentRunId || Boolean(queuedFollowUp) || interventionUsed))
   const composerAction = composerPrimaryAction(runActive, Boolean(draft.trim()||imageDraft.images.length), Boolean(currentRunId))
   useEffect(() => {
     if (runActive && !wasRunActive.current) { runStartedAt.current = Date.now(); setRunElapsedMs(0) }
@@ -391,7 +395,6 @@ function ConversationWorkspace({ initialConversationId, initialContent, onHome }
             {message.cardType !== 'MUSIC_ANALYSIS' && <KnowledgeReferences payload={message.cardPayloadJson} />}
           </TimedMessage>
         })}
-        {candidateRun && <CandidateGenerationCard size={candidateRun.size} preferenceText={candidateRun.preferenceText} onProgress={(item) => setProgress(previous => [...previous, item])} onPlan={recordPlan} onRunId={setCurrentRunId} onCompleted={async payload => { await persistCard('CANDIDATE_POOL_CARD', 'CANDIDATE_POOL', payload); setCandidateRun(null); setCollapsed(true) }} onFailed={message => { setNotice(message); setCandidateRun(null); setCollapsed(true) }} />}
         {streamingResponse && <article className="conversation-message agent streaming-response"><span className="message-agent-mark"><BrandMark /></span><MessageBody content={streamingResponse} /><i className="streaming-response-caret" aria-hidden="true" /></article>}
         {hasRunState && <AgentActivity progress={progress} collapsed={collapsed} active={runActive} elapsedMs={runElapsedMs} canStop={false} canRegenerate={messages.some(message => message.role === 'USER' && message.type === 'USER_TEXT')} onToggle={() => setCollapsed(value => !value)} onStop={() => void stopCurrentRun()} onRegenerate={() => setRegenerationOpen(value => !value)} />}
         {regenerationOpen && !runActive && <section className="regeneration-panel"><strong>重新生成这轮回答</strong><p>可直接重试，也可以附加一个调整方向。</p><div>{['更冷门一些', '减少相同艺人', '换一批歌曲'].map(item => <button type="button" key={item} onClick={() => setRegenerationInstruction(item)}>{item}</button>)}</div><textarea value={regenerationInstruction} onChange={event => setRegenerationInstruction(event.target.value)} placeholder="例如：更冷门一些，减少相同艺人" /><footer><button type="button" onClick={() => setRegenerationOpen(false)}>取消</button><button type="button" className="primary" onClick={() => regenerateLastAnswer(regenerationInstruction)}>重新生成</button></footer></section>}
@@ -470,9 +473,90 @@ function StopIcon() { return <svg viewBox="0 0 20 20" aria-hidden="true"><rect x
 function ReportIcon() { return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3.5h6l3 3V16.5H6zM12 3.5v3h3M8.5 10h4M8.5 13h4" /></svg> }
 function MemoryIcon() { return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 6.5C5 5.1 7.2 4 10 4s5 1.1 5 2.5S12.8 9 10 9 5 7.9 5 6.5Zm0 0v3C5 10.9 7.2 12 10 12s5-1.1 5-2.5v-3M5 9.5v3C5 13.9 7.2 15 10 15s5-1.1 5-2.5v-3" /></svg> }
 function MusicCover({ url, title }: { url?: string; title?: string }) { const [failed, setFailed] = useState(false); return url && !failed ? <img src={url} alt="" loading="lazy" onError={() => setFailed(true)} /> : <span className="music-cover-placeholder" aria-hidden="true">{(title || '寻声').slice(0, 2)}</span> }
-function TournamentLaunchCard({ payload, onStart }: { payload?: string | null; onStart: (size: 16 | 32, preferenceText: string) => void }) { let title = '把这轮偏好放进一场比赛'; let preferenceText = ''; try { const value = JSON.parse(payload || '{}'); title = value.title || title; preferenceText = value.preferenceText || '' } catch { /* malformed legacy card */ } return <section className="tournament-launch-card"><p className="eyebrow">歌曲世界杯</p><h2>{title}</h2><p>先查找并核验候选歌曲；你确认后才会开始两两对决。</p><div><button onClick={() => onStart(16, preferenceText)}>构建 16 首候选池</button><button onClick={() => onStart(32, preferenceText)}>构建 32 首候选池</button></div></section> }
-function CandidateGenerationCard({ size, preferenceText, onProgress, onPlan, onRunId, onCompleted, onFailed }: { size: 16 | 32; preferenceText: string; onProgress: (item: Progress) => void; onPlan: (item: Plan) => void; onRunId: (runId: string | null) => void; onCompleted: (payload: CardPayload) => Promise<void>; onFailed: (message: string) => void }) { const [status, setStatus] = useState('正在理解你的偏好并寻找歌曲…'); useEffect(() => { let alive = true; const requestId=crypto.randomUUID(); void queuedRun<CandidatePoolResponse>('/agent-runs/candidate-pool', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId }, body: JSON.stringify({ size, preferenceText, seedArtistIds: [], confirmedArtists: [] }) }, item => { if (alive) { setStatus(item.message); onProgress(item) } }, onPlan, onRunId).then(async result => { if (!alive) return; if (result.status !== 'ready_for_confirmation' || !result.candidatePool) { onFailed(result.candidatePool?.warnings?.[0]?.message || '候选池暂时不足以开赛，请补充偏好后重试。'); return } await onCompleted({ size, status: result.status, preferenceText, summary: result.candidatePool.candidateSummary, items: result.candidatePool.items.map(item => ({ recordingId: item.recordingId, title: item.title, artistName: item.artistName, coverUrl: item.coverUrl })) }) }).catch(error => alive && onFailed(friendlyError(error))); return () => { alive = false } }, [size, preferenceText]); return <section className="tournament-launch-card"><p className="eyebrow">候选池生成中</p><h2>正在为这场 {size} 首比赛挑选歌曲</h2><p>{status}</p></section> }
-function CandidatePoolCard({ cardMessageId, alreadyStarted, payload, onRebuild, onTournamentCreated }: { cardMessageId: string; alreadyStarted: boolean; payload?: string | null; onRebuild: (size: 16 | 32, preferenceText: string) => void; onTournamentCreated: (id: string, size: number, sourceCandidateMessageId: string) => void }) { let value: CardPayload = {}; try { value = JSON.parse(payload || '{}') } catch { /* display degraded card */ } const size = value.size || 16; const [removed, setRemoved] = useState<string[]>([]); const [starting, setStarting] = useState(false); const [created, setCreated] = useState<string | null>(null); const [error, setError] = useState(''); const active = (value.items || []).filter(item => !removed.includes(item.recordingId)).slice(0, size); const remove = (id: string) => setRemoved(current => current.includes(id) ? current : [...current, id]); const start = async () => { if (active.length !== size) return; setStarting(true); setError(''); try { const tournament = await api<{ id: string; status: string }>('/tournaments', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ size, candidateSource: 'AGENT_GENERATED', recordingIds: active.map(item => item.recordingId), explorationBrief: value.preferenceText || value.summary || '' }) }); if (tournament.status === 'DRAFT') await api(`/tournaments/${tournament.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'READY' }) }); setCreated(tournament.id); onTournamentCreated(tournament.id, size, cardMessageId) } catch { setError('赛事创建失败，请重试。') } finally { setStarting(false) } }; if (created || alreadyStarted) return <section className="tournament-launch-card"><p className="eyebrow">候选歌曲池</p><h2>赛事已创建</h2><p>首场对局已写入下方的赛事卡；你的候选池仍保留在这条对话中。</p></section>; const hasSnapshot = active.length > 0; return <section className="tournament-launch-card"><p className="eyebrow">候选歌曲池</p><h2>{value.status === 'ready_for_confirmation' ? `已为 ${size} 首赛事整理候选` : '候选池需要继续调整'}</h2><p>{value.summary || '候选池已保存；可在当前会话内继续确认与开赛。'}</p>{hasSnapshot ? <ol className="conversation-candidate-preview">{active.slice(0, 10).map(item => <li key={item.recordingId}>{item.coverUrl && <img src={item.coverUrl} alt="" />}<span><strong>{item.title}</strong><small>{item.artistName}</small></span><button onClick={() => remove(item.recordingId)} disabled={starting}>移除</button></li>)}{active.length > 10 && <li className="more">以及另外 {active.length - 10} 首参赛候选</li>}</ol> : <p className="conversation-card-count">这是较早版本保存的候选卡，缺少可展示的歌曲快照。重新构建后会把完整候选留在当前对话中。</p>}{hasSnapshot && <p className="conversation-card-count">当前参赛 {active.length} / {size} 首；移除后会由候补自动补位。</p>}{error && <p className="conversation-card-error">{error}</p>}<div>{hasSnapshot ? <button disabled={starting || active.length !== size} onClick={() => void start()}>{starting ? '正在创建赛事…' : '确认这组歌曲并开赛'}</button> : <button onClick={() => onRebuild(size, value.preferenceText || value.summary || '根据本轮已有的音乐偏好重新构建候选歌曲池')}>重新构建完整候选池</button>}</div></section> }
+function TournamentLaunchCard({ payload, onStart }: { payload?: string | null; onStart: (size: 16 | 32, preferenceText: string) => void }) { let title = '把这轮偏好放进一场比赛'; let preferenceText = ''; try { const value = JSON.parse(payload || '{}'); title = value.title || title; preferenceText = value.preferenceText || '' } catch { /* malformed legacy card */ } return <section className="tournament-launch-card"><p className="eyebrow">歌曲世界杯</p><h2>{title}</h2><p>先查找并核验候选歌曲；你确认后才会开始两两对决。</p><div><button onClick={() => onStart(16, preferenceText)}>16 首赛事 · 至少 24 首候选</button><button onClick={() => onStart(32, preferenceText)}>32 首赛事 · 至少 48 首候选</button></div></section> }
+function CandidatePoolCard({ cardMessageId, alreadyStarted, payload, onRebuild, onTournamentCreated }: {
+  cardMessageId: string
+  alreadyStarted: boolean
+  payload?: string | null
+  onRebuild: (size: 16 | 32, preferenceText: string) => void
+  onTournamentCreated: (id: string, size: number, sourceCandidateMessageId: string) => void
+}) {
+  const value = useMemo<CardPayload>(() => {
+    try { return JSON.parse(payload || '{}') } catch { return {} }
+  }, [payload])
+  const size = value.size || 16
+  const [removed, setRemoved] = useState<string[]>([])
+  const [starting, setStarting] = useState(false)
+  const [created, setCreated] = useState<string | null>(null)
+  const [error, setError] = useState('')
+  const eligible = useMemo(() => {
+    const removedIds = new Set(removed)
+    return (value.items || []).filter(item => !removedIds.has(item.recordingId))
+  }, [value.items, removed])
+  const active = eligible.slice(0, size)
+
+  async function start() {
+    if (active.length !== size || starting) return
+    setStarting(true)
+    setError('')
+    try {
+      const tournament = await api<{ id: string; status: string }>('/tournaments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+        body: JSON.stringify({
+          size, candidateSource: 'AGENT_GENERATED', recordingIds: active.map(item => item.recordingId),
+          explorationBrief: value.preferenceText || value.summary || '',
+        }),
+      })
+      if (tournament.status === 'DRAFT') {
+        await api(`/tournaments/${tournament.id}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'READY' }),
+        })
+      }
+      setCreated(tournament.id)
+      onTournamentCreated(tournament.id, size, cardMessageId)
+    } catch {
+      setError('赛事创建失败，请重试。')
+    } finally {
+      setStarting(false)
+    }
+  }
+
+  if (created || alreadyStarted) return <section className="tournament-launch-card">
+    <p className="eyebrow">候选歌曲池</p>
+    <h2>赛事已创建</h2>
+    <p>首场对局已写入下方的赛事卡。</p>
+  </section>
+
+  const hasSnapshot = active.length > 0
+  return <section className="tournament-launch-card">
+    <p className="eyebrow">候选歌曲池</p>
+    <h2>{value.status === 'ready_for_confirmation' ? `已为 ${size} 首赛事整理候选` : '候选池需要继续调整'}</h2>
+    <p>{value.summary || '候选池已保存，可在当前会话确认并开赛。'}</p>
+    {hasSnapshot ? <>
+      <ol className="conversation-candidate-preview">
+        {active.map(item => <li key={item.recordingId}>
+          {item.coverUrl && <img src={item.coverUrl} alt="" loading="lazy" />}
+          <span><strong>{item.title}</strong><small>{item.artistName}</small></span>
+          <button type="button" onClick={() => setRemoved(previous => [...previous, item.recordingId])}
+            disabled={starting || eligible.length <= size}>移除</button>
+        </li>)}
+      </ol>
+      <p className="conversation-card-count">当前参赛 {active.length} / {size} 首，移除后由候补自动补位。</p>
+      <CandidateReserveList items={eligible.slice(size)} />
+    </> : <p className="conversation-card-count">这是较早版本的候选卡。重新构建后可查看完整候选。</p>}
+    {error && <p className="conversation-card-error">{error}</p>}
+    <div>{hasSnapshot
+      ? <button type="button" disabled={starting || active.length !== size} onClick={() => void start()}>
+        {starting ? '正在创建赛事…' : '确认这组歌曲并开赛'}
+      </button>
+      : <button type="button" onClick={() => onRebuild(size, value.preferenceText || value.summary || '根据本轮已有的音乐偏好重新构建候选歌曲池')}>
+        重新构建完整候选池
+      </button>}
+    </div>
+  </section>
+}
 function ClarificationCard({ payload, agentRunId, onCompleted, onProgress, onPlan }: { payload?: string | null; agentRunId?: string | null; onCompleted: () => void; onProgress: (item: Progress) => void; onPlan: (item: Plan) => void }) {
   let value: { question?: string; reason?: string; options?: string[]; allowFreeText?: boolean; clarifications?: { mention?: string; candidates?: { name?: string; mbid?: string; country?: string; disambiguation?: string }[] }[]; preferenceText?: string } = {}
   try { value = JSON.parse(payload || '{}') } catch { /* degraded card */ }

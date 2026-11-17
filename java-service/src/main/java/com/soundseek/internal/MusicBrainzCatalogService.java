@@ -376,57 +376,124 @@ public class MusicBrainzCatalogService {
     return result;
   }
 
-  /**
-   * Retrieves canonical recordings directly from MusicBrainz for already-resolved artists.
-   * This avoids turning a 32-song pool into dozens of sequential title lookups while keeping
-   * MusicBrainz as the sole identity authority.
-   */
+  public List<SelectedArtist> selectedArtists(List<UUID> ids) {
+    return ids.stream().distinct().map(id -> artists.findById(id)
+        .map(artist -> new SelectedArtist(id, artist.getMusicbrainzMbid(), artist.getName()))
+        .orElseThrow(() -> new IllegalArgumentException("起点艺人不存在"))).toList();
+  }
+
   @Transactional
   public List<Resolution> discoverArtistRecordings(List<ArtistSeed> seeds, int perArtistLimit) {
-    var results = new ArrayList<Resolution>();
-    var seen = new HashSet<String>();
-    var nextSeedRank = recordings.findMaxSeedRank() + 1;
+    var candidates = new ArrayList<Candidate>();
     for (var seed : seeds.stream().filter(Objects::nonNull).limit(8).toList()) {
       try {
-        // Use MusicBrainz' browse API for an already-resolved artist MBID. A
-        // Lucene `arid:` search ranks recording versions and can return many
-        // editions of only a handful of songs. Browse returns the canonical
-        // recording collection in one polite request.
-        var uri = URI.create(baseUrl + "/recording?fmt=json&limit=" + Math.min(Math.max(perArtistLimit, 1), 100)
-            + "&offset=0&artist=" + URLEncoder.encode(seed.mbid(), StandardCharsets.UTF_8)
-            + "&inc=artist-credits");
-        var response = send(uri);
-        if (response.statusCode() != 200) continue;
-        for (var node : objectMapper.readTree(response.body()).path("recordings")) {
-          var candidate = parseCandidate(node, seed);
-          if (candidate == null || !seed.mbid().equals(candidate.artistMbid()) || !seen.add(candidate.recordingMbid())) continue;
-          var hint = new Hint(candidate.title(), candidate.artistName(), "https://musicbrainz.org/artist/" + seed.mbid());
-          var existing = recordings.findByMusicbrainzMbid(candidate.recordingMbid());
-          if (existing.isPresent()) {
-            existing.get().attachExternalDiscovery(hint.sourceUrl());
-            results.add(Resolution.resolved(hint, existing.get(), candidate.score(), false));
-            continue;
-          }
-          var artist = artists.findByMusicbrainzMbid(candidate.artistMbid())
-              .or(() -> artists.findFirstByNameIgnoreCase(candidate.artistName()))
-              .orElseGet(() -> artists.save(Artist.imported(candidate.artistName(), candidate.artistSortName(), candidate.artistMbid())));
-          artist.attachMusicbrainzIdentity(candidate.artistMbid());
-          var sameTitle = recordings.findFirstByArtistIdAndTitleIgnoreCase(artist.getId(), candidate.title());
-          if (sameTitle.isPresent()) {
-            var recording = sameTitle.get();
-            recording.attachMusicbrainzIdentity(candidate.recordingMbid(), candidate.releaseMbid(), candidate.albumTitle());
-            recording.attachExternalDiscovery(hint.sourceUrl());
-            results.add(Resolution.resolved(hint, recording, candidate.score(), false));
-            continue;
-          }
-          var saved = recordings.save(Recording.imported(artist, candidate.title(), candidate.albumTitle(), nextSeedRank++, candidate.recordingMbid(), candidate.releaseMbid(), hint.sourceUrl()));
-          results.add(Resolution.resolved(hint, saved, candidate.score(), true));
-        }
+        addArtistPage(candidates, browseArtistPage(seed, Math.clamp(perArtistLimit, 1, 100), 0), seed);
+      } catch (InterruptedException interrupted) {
+        Thread.currentThread().interrupt();
+        break;
       } catch (Exception ignored) {
-        // The agent receives partial verified results and can decide whether further web discovery is useful.
+        // Limited artist discovery can return the other available artists.
+      }
+    }
+    return importArtistRecordings(candidates, seeds);
+  }
+
+  @Transactional
+  public List<Resolution> discoverCompleteArtistCatalog(List<ArtistSeed> seeds) {
+    if (seeds.isEmpty() || seeds.size() > 8) {
+      throw new IllegalArgumentException("请选择 1 至 8 位艺人");
+    }
+    var candidates = new ArrayList<Candidate>();
+    try {
+      for (var seed : seeds) {
+        for (int offset = 0; ; ) {
+          var page = browseArtistPage(seed, 100, offset);
+          var recordingsPage = page.path("recordings");
+          int count = page.path("recording-count").asInt(-1);
+          if (count < 0 || page.path("recording-offset").asInt(offset) != offset
+              || (recordingsPage.isEmpty() && offset < count)) {
+            throw new IllegalStateException("MUSICBRAINZ_INVALID_RECORDING_PAGE");
+          }
+          addArtistPage(candidates, page, seed);
+          offset += recordingsPage.size();
+          if (offset >= count) break;
+        }
+      }
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("MUSICBRAINZ_CATALOG_INTERRUPTED", interrupted);
+    } catch (Exception failure) {
+      throw new IllegalStateException("MUSICBRAINZ_CATALOG_UNAVAILABLE", failure);
+    }
+    return importArtistRecordings(candidates, seeds);
+  }
+
+  private JsonNode browseArtistPage(ArtistSeed seed, int limit, int offset) throws Exception {
+    var mbid = UUID.fromString(seed.mbid());
+    var uri = URI.create(baseUrl + "/recording?fmt=json&limit=" + limit + "&offset=" + offset
+        + "&artist=" + mbid + "&inc=artist-credits");
+    var response = send(uri);
+    if (response.statusCode() != 200) throw new IllegalStateException("MUSICBRAINZ_UNAVAILABLE");
+    var page = objectMapper.readTree(response.body());
+    if (!page.path("recordings").isArray()) throw new IllegalStateException("MUSICBRAINZ_INVALID_RECORDING_PAGE");
+    return page;
+  }
+
+  private void addArtistPage(List<Candidate> candidates, JsonNode page, ArtistSeed seed) {
+    for (var node : page.path("recordings")) {
+      var candidate = parseCandidate(node, seed);
+      if (candidate != null) candidates.add(candidate);
+    }
+  }
+
+  private List<Resolution> importArtistRecordings(List<Candidate> candidates, List<ArtistSeed> seeds) {
+    var results = new ArrayList<Resolution>();
+    var seenMbids = new HashSet<String>();
+    var seenTitles = new HashSet<List<String>>();
+    var seenRecordingIds = new HashSet<UUID>();
+    var artistByMbid = new HashMap<String, Artist>();
+    var localArtistByMbid = new HashMap<String, UUID>();
+    for (var seed : seeds) {
+      if (seed != null && seed.localArtistId() != null) localArtistByMbid.put(seed.mbid(), seed.localArtistId());
+    }
+    var nextSeedRank = recordings.findMaxSeedRank() + 1;
+    for (var candidate : candidates) {
+      var titleKey = List.of(candidate.artistMbid(), normalize(candidate.title()));
+      if (seenMbids.contains(candidate.recordingMbid()) || seenTitles.contains(titleKey)) continue;
+      var hint = new Hint(candidate.title(), candidate.artistName(), "https://musicbrainz.org/recording/" + candidate.recordingMbid());
+      var existing = recordings.findByMusicbrainzMbid(candidate.recordingMbid());
+      var sameTitle = existing.isPresent() ? existing : recordings.findFirstByArtistIdAndTitleIgnoreCase(
+          artistByMbid.computeIfAbsent(candidate.artistMbid(), mbid -> importCatalogArtist(candidate, localArtistByMbid.get(mbid))).getId(),
+          candidate.title());
+      var recording = sameTitle.orElse(null);
+      if (recording == null) {
+        recording = recordings.save(Recording.imported(artistByMbid.get(candidate.artistMbid()), candidate.title(),
+            candidate.albumTitle(), nextSeedRank++, candidate.recordingMbid(), candidate.releaseMbid(), hint.sourceUrl()));
+      } else {
+        if (recording.getMusicbrainzMbid() == null) {
+          recording.attachMusicbrainzIdentity(candidate.recordingMbid(), candidate.releaseMbid(), candidate.albumTitle());
+        }
+        recording.attachExternalDiscovery(hint.sourceUrl());
+      }
+      seenMbids.add(candidate.recordingMbid());
+      seenTitles.add(titleKey);
+      if (seenRecordingIds.add(recording.getId())) {
+        results.add(Resolution.resolved(hint, recording, candidate.score(), sameTitle.isEmpty()));
       }
     }
     return results;
+  }
+
+  private Artist importCatalogArtist(Candidate candidate, UUID localArtistId) {
+    var mbid = candidate.artistMbid();
+    var artist = artists.findByMusicbrainzMbid(mbid)
+        .or(() -> localArtistId == null ? Optional.empty() : artists.findById(localArtistId)
+            .filter(value -> value.getMusicbrainzMbid() == null || mbid.equals(value.getMusicbrainzMbid())))
+        .or(() -> artists.findFirstByNameIgnoreCase(candidate.artistName())
+            .filter(value -> value.getMusicbrainzMbid() == null || mbid.equals(value.getMusicbrainzMbid())))
+        .orElseGet(() -> artists.save(Artist.imported(candidate.artistName(), candidate.artistSortName(), mbid)));
+    artist.attachMusicbrainzIdentity(mbid);
+    return artist;
   }
 
   private SearchOutcome search(Hint hint) throws Exception {
@@ -516,8 +583,8 @@ public class MusicBrainzCatalogService {
     var title = text(node, "title");
     if (recordingMbid == null || title == null) return null;
     var artistNode = matchingCredit.path("artist");
-    var creditedName = Optional.ofNullable(text(matchingCredit, "name"))
-        .orElse(Optional.ofNullable(text(artistNode, "name")).orElse(seed.name()));
+    var creditedName = Optional.ofNullable(text(artistNode, "name"))
+        .orElse(Optional.ofNullable(text(matchingCredit, "name")).orElse(seed.name()));
     var sortName = Optional.ofNullable(text(artistNode, "sort-name")).orElse(creditedName);
     return new Candidate(recordingMbid, title, seed.mbid(), creditedName, sortName, null, null, 100);
   }
@@ -589,7 +656,8 @@ public class MusicBrainzCatalogService {
   }
 
   public record Hint(String title, String artistName, String sourceUrl) {}
-  public record ArtistSeed(String mbid, String name) {}
+  public record ArtistSeed(String mbid, String name, UUID localArtistId) {}
+  public record SelectedArtist(UUID id, String mbid, String name) {}
   public record ArtistCandidate(String mbid, String name, String sortName, String country, String type, String disambiguation, String begin, String end, int score) {}
   public record ArtistResolution(String mention, List<ArtistCandidate> candidates, String reason) {}
   private record Candidate(String recordingMbid, String title, String artistMbid, String artistName,

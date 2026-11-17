@@ -19,8 +19,8 @@ def main() -> None:
         "requestId": str(request_id),
         "guestId": "rerank-contract-demo",
         "size": 32,
-        "candidateCount": 64,
-        "preferenceText": "我喜欢徐佳莹、艾怡良和郑宜农，想探索适合深夜聆听的华语创作女声，也允许扩展相近艺人。",
+        "candidateCount": 48,
+        "preferenceText": "想探索适合深夜聆听的华语创作女声，偏向独立流行、民谣与叙事性较强的作品。",
         "seedArtistIds": [],
         "excludeRecordingIds": [],
     }
@@ -50,7 +50,7 @@ def main() -> None:
     statuses = {item.get("explanationStatus") for item in items}
     valid = (
         result.get("status") == "ready_for_confirmation"
-        and len(items) == 64 and len(main_items) == 32 and len(reserve_items) == 32
+        and len(items) == 48 and len(main_items) == 32 and len(reserve_items) == 16
         and all(item.get("rankingReason") and item.get("selectionFactors") for item in items)
         and statuses <= {"MODEL_GENERATED", "CATALOG_FALLBACK"}
     )

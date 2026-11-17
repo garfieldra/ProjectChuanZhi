@@ -96,7 +96,7 @@ public class ConversationController {
   }
 
   @PostMapping("/{id}/messages")
-  ResponseEntity<QueuedView> enqueue(@PathVariable UUID id,@RequestHeader("Idempotency-Key") UUID key,@Valid @RequestBody Send body,HttpServletRequest request){var guest=guest(request);rateLimit.assertConversationMessageAllowed(guest.getId());ConversationApplicationService.QueuedTurn queued;try{queued=service.enqueue(id,guest.getId(),key,body.content(),body.attachmentIds());}catch(org.springframework.dao.DataIntegrityViolationException race){queued=service.queuedByClientMessage(id,guest.getId(),key);}return ResponseEntity.accepted().body(new QueuedView(queued.runId(),queued.status(),"/api/v1/agent-runs/"+queued.runId()+"/events:stream",queued.replayed()));}
+  ResponseEntity<QueuedView> enqueue(@PathVariable UUID id,@RequestHeader("Idempotency-Key") UUID key,@Valid @RequestBody Send body,HttpServletRequest request){var guest=guest(request);rateLimit.assertConversationMessageAllowed(guest.getId());ConversationApplicationService.QueuedTurn queued;try{queued=service.enqueue(id,guest.getId(),key,body.content(),body.attachmentIds(),body.candidateSize());}catch(org.springframework.dao.DataIntegrityViolationException race){queued=service.queuedByClientMessage(id,guest.getId(),key);}return ResponseEntity.accepted().body(new QueuedView(queued.runId(),queued.status(),"/api/v1/agent-runs/"+queued.runId()+"/events:stream",queued.replayed()));}
 
   private void write(OutputStream out, String event, String data) {
     try {
@@ -111,7 +111,7 @@ public class ConversationController {
 
   record Update(@Size(min = 1, max = 120) String title) {}
 
-  record Send(@Size(max = 2000) String content, @Size(max=10) List<@NotNull UUID> attachmentIds) { Send { content=content==null?"":content;attachmentIds=com.soundseek.attachments.AttachmentIds.validate(content,attachmentIds); } }
+  record Send(@Size(max = 2000) String content, @Size(max=10) List<@NotNull UUID> attachmentIds, Integer candidateSize) { Send { content=content==null?"":content;attachmentIds=com.soundseek.attachments.AttachmentIds.validate(content,attachmentIds); } }
   record QueuedView(UUID runId,String status,String eventsUrl,boolean replayed) {}
 
   record Card(@NotNull ConversationMessageType type, @NotBlank @Size(max = 40) String cardType, @NotBlank @Size(max = 20000) String payloadJson) {}

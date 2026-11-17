@@ -44,7 +44,7 @@ class CandidatePoolApplicationServiceTest {
   @ValueSource(ints = {16, 32})
   void returnsCatalogFactsInAgentOrderForFullCandidatePool(int size) {
     var requestId = UUID.randomUUID();
-    var ids = ids(size * 2);
+    var ids = ids(size + size / 2);
     var result = readyResult(requestId, size, ids);
     var catalog = catalog(ids);
     when(gateway.generate(requestId, "guest", size, "温柔、有留白的中文独立音乐", List.of())).thenReturn(result);
@@ -55,15 +55,15 @@ class CandidatePoolApplicationServiceTest {
     assertThat(response.status()).isEqualTo("ready_for_confirmation");
     assertThat(response.candidatePool().recordingIds()).containsExactlyElementsOf(ids);
     assertThat(response.candidatePool().items()).extracting(item -> item.recordingId()).containsExactlyElementsOf(ids);
-    assertThat(response.candidatePool().reserveSize()).isEqualTo(size);
+    assertThat(response.candidatePool().reserveSize()).isEqualTo(size / 2);
     assertThat(response.candidatePool().warnings()).isEmpty();
   }
 
   @Test
   void rejectsDuplicateRecordingIds() {
     var requestId = UUID.randomUUID();
-    var ids = ids(16);
-    ids.set(15, ids.get(0));
+    var ids = ids(24);
+    ids.set(23, ids.get(0));
     when(gateway.generate(requestId, "guest", 16, "测试偏好", List.of())).thenReturn(readyResult(requestId, 16, ids));
 
     assertThatThrownBy(() -> service.generate(requestId, "guest", 16, "测试偏好", List.of()))
@@ -75,8 +75,8 @@ class CandidatePoolApplicationServiceTest {
   @Test
   void rejectsUnknownCatalogRecording() {
     var requestId = UUID.randomUUID();
-    var ids = ids(16);
-    var partialCatalog = ids.subList(0, 15).stream().map(ignored -> mock(Recording.class)).toList();
+    var ids = ids(24);
+    var partialCatalog = ids.subList(0, 23).stream().map(ignored -> mock(Recording.class)).toList();
     when(gateway.generate(requestId, "guest", 16, "测试偏好", List.of())).thenReturn(readyResult(requestId, 16, ids));
     when(recordings.findByIdInWithArtist(ids)).thenReturn(partialCatalog);
 
@@ -122,7 +122,7 @@ class CandidatePoolApplicationServiceTest {
     var requestId = UUID.randomUUID();
     var allowedArtistId = UUID.randomUUID();
     var otherArtistId = UUID.randomUUID();
-    var ids = ids(16);
+    var ids = ids(24);
     var result = readyResult(requestId, 16, ids);
     var policy = result.putObject("intentPolicy");
     policy.put("intentMode", "ARTIST_LOCKED");
@@ -146,6 +146,37 @@ class CandidatePoolApplicationServiceTest {
         requestId, "guest", 16, "只玩这个歌手的歌曲世界杯", List.of(allowedArtistId)))
         .isInstanceOf(CandidatePoolContractException.class)
         .hasMessageContaining("限定艺人范围之外");
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {16, 32})
+  void rejectsReadyPoolBelowTheRequiredMinimum(int size) {
+    var requestId = UUID.randomUUID();
+    var minimum = size + size / 2;
+    var partial = readyResult(requestId, size, ids(minimum - 1));
+
+    assertThatThrownBy(() -> service.fromAgentResult(requestId, size, partial, List.of()))
+        .isInstanceOf(CandidatePoolContractException.class)
+        .hasMessageContaining("少于 " + minimum + " 首");
+  }
+
+  @Test
+  void keepsTheEntireDeduplicatedLockedArtistPool() {
+    var requestId = UUID.randomUUID();
+    var ids = ids(57);
+    var result = readyResult(requestId, 16, ids);
+    var catalog = catalog(ids);
+    var policy = result.putObject("intentPolicy");
+    policy.put("intentMode", "ARTIST_LOCKED");
+    var artistId = UUID.randomUUID();
+    catalog.forEach(recording -> when(recording.getArtist().getId()).thenReturn(artistId));
+    policy.putArray("allowedArtistIds").add(artistId.toString());
+    when(recordings.findByIdInWithArtist(ids)).thenReturn(catalog);
+
+    var response = service.fromAgentResult(requestId, 16, result, List.of());
+
+    assertThat(response.candidatePool().recordingIds()).containsExactlyElementsOf(ids);
+    assertThat(response.candidatePool().reserveSize()).isEqualTo(41);
   }
 
   private ObjectNode readyResult(UUID requestId, int size, List<UUID> ids) {

@@ -166,18 +166,19 @@ class DeepSeekCandidateSelector:
             return baseline
 
     async def extract_named_artists(self, preference: str) -> list[str]:
-        """Extract literal artist mentions; MusicBrainz, not the model, resolves identity."""
+        """Extract literal artist mentions; MusicBrainz resolves their identity."""
+        fallback = _tournament_artist_mentions(preference)
         if self.model is None:
-            return []
-        prompt = f"""从用户音乐偏好文本中提取明确写出的歌手或乐队名称。不要推测、翻译、补全或输出作品名。
+            return fallback
+        prompt = f"""从本次世界杯请求中提取用户明确指定参赛的歌手或乐队名称。忽略用户明确排除的艺人、泛指、流派与作品名。不要推测、翻译或补全。
 用户文本：{preference}
 每个 mention 必须逐字出现在用户文本中。只输出符合 NamedArtistExtraction 的 JSON。"""
         try:
             parsed = await self.model.with_structured_output(NamedArtistExtraction, method="function_calling").ainvoke(prompt)
             mentions = [item.mention for item in parsed.artists if item.mention in preference]
+            return list(dict.fromkeys(mentions))[:8]
         except Exception:
-            mentions = []
-        return list(dict.fromkeys([*mentions, *_literal_artist_mentions(preference)]))[:8]
+            return fallback
 
     async def decide(self, preference: str, target_count: int, active_count: int, state_summary: dict) -> CandidateDecision:
         if self.model is None:
@@ -199,7 +200,7 @@ class DeepSeekCandidateSelector:
 黑板摘要：{json.dumps(state_summary, ensure_ascii=False)}
 动作白名单：understand_preference, resolve_named_entities, request_clarification, search_catalog, expand_artist_catalog, search_knowledge, search_web, search_spotify, search_domestic_content, resolve_musicbrainz, rerank_candidates, submit_candidates, finish_insufficient。
 reasonCode 白名单：intent_policy_missing, locked_artist_identity_unresolved, verified_candidates_below_active_size, verified_candidates_below_target, local_scope_exhausted, cross_artist_expansion_allowed, external_hints_require_resolution, candidate_pool_requires_rerank, candidate_pool_ready_for_validation, budget_or_stagnation_limit_reached。
-规则：没有 intentPolicy 时先理解偏好；命名艺人尚未解析时优先 resolve_named_entities；存在未确认歧义时必须 request_clarification；对已解析的明确艺人，可自主选择 expand_artist_catalog 从 MusicBrainz 批量发现规范曲目；非锁定模式下应把明确艺人作为起点，并通过 search_web 主动寻找相近艺人、专辑或歌曲，再经 MusicBrainz 核验；最终歌曲必须有内部 recording ID；本地目录只是缓存补充；ARTIST_LOCKED 不能扩展到允许集合外；未达到等量 reserve 时不得提交 ready_for_confirmation；不要重复无收益动作。
+规则：没有 intentPolicy 时先理解偏好；命名艺人尚未解析时优先 resolve_named_entities；存在未确认歧义时必须 request_clarification；指定艺人的赛事按已核验的 MusicBrainz 目录生成；开放模式可按偏好寻找相近艺人、专辑或歌曲，再经 MusicBrainz 核验；最终歌曲必须有内部 recording ID；本地目录只是缓存补充；ARTIST_LOCKED 不能扩展到允许集合外；未达到目标候选数时不得提交 ready_for_confirmation；不要重复无收益动作。
 仅输出 JSON：{{"action":"...","reason_code":"...","decision_summary":"不含思维链的简短理由","query":"可选检索词"}}"""
         response = await self.model.ainvoke(prompt)
         try:
@@ -401,6 +402,14 @@ def _fallback_ranked_items(recordings: list[dict], preference: str, policy: Inte
     return result
 
 
+def _tournament_artist_mentions(preference: str) -> list[str]:
+    import re
+    explicit = re.search(r"(?:只听|只玩|仅限|指定艺人[：:]?|用|拿)\s*([^，。！？；\n]{1,120}?)的(?:歌曲|作品|歌)(?:办|做|打一场|来|参加|世界杯|$)", preference)
+    if explicit:
+        return _literal_artist_mentions("我喜欢" + explicit.group(1))[:8]
+    return _literal_artist_mentions(preference)[:8]
+
+
 def _literal_artist_mentions(preference: str) -> list[str]:
     import re
     match = re.search(r"(?:我喜欢|喜欢|常听|爱听)\s*([^。！？；\n]{1,160})", preference)
@@ -415,7 +424,7 @@ def _literal_artist_mentions(preference: str) -> list[str]:
     )[0]
     artist_clause = artist_clause.split("的歌曲")[0].split("的歌")[0]
     raw = re.split(r"[、,，/]|(?:和|与|及)", artist_clause)
-    non_artist_terms = {"克制", "温柔", "忧郁", "明亮", "治愈", "孤独", "浪漫", "热烈", "安静", "冷峻", "中文", "华语", "独立音乐", "民谣", "摇滚", "电子", "爵士", "流行", "说唱"}
+    non_artist_terms = {"这个歌手", "这位歌手", "那位歌手", "这个艺人", "某位艺人", "克制", "温柔", "忧郁", "明亮", "治愈", "孤独", "浪漫", "热烈", "安静", "冷峻", "中文", "华语", "独立音乐", "民谣", "摇滚", "电子", "爵士", "流行", "说唱"}
     return [value.strip() for value in raw if 1 < len(value.strip()) <= 60 and value.strip() not in non_artist_terms]
 
 
