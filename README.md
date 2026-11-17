@@ -1,361 +1,158 @@
 # 寻声 SoundSeek
 
-> 一个以多轮对话为主入口、由统一 ReAct Agent 驱动的中文音乐探索应用。
+寻声是一款由 AI Agent 驱动的中文音乐探索 Web 应用。用户可以从一首歌、一位艺人或一个聆听场景开始，得到有据可查的推荐、歌曲分析和试听入口。也可以用自然语言继续调整方向，例如“保留上一轮第二首，再找几首更偏现场版的”。
 
-SoundSeek 不要求用户先填写标签或进入固定流程。用户可以直接描述喜欢的艺人、歌曲、声音、场景或情绪，Agent 会结合多轮上下文，在公开网络中寻找线索、通过 MusicBrainz 核验歌曲身份，并返回可继续追问和反馈的歌曲/艺人卡片。
+访客可从首页直接开始探索。登录后可归并访客对话、收藏和其他资产，并在不同设备继续访问。
 
-“歌曲世界杯”仍然存在，但它是一项按需进入的 Skill：只有用户明确要求淘汰赛、两两对决或直接开赛时，系统才会构建 16/32 首候选池。比赛结束后，完整选择轨迹可用于生成赛后偏好报告。
+![寻声界面预览](./docs/assets/home.png)
 
-[项目仓库](https://github.com/garfieldra/ProjectChuanZhi)
+*本地图示使用示例会话。*
 
-本竞赛项目基于本人既有的 [IndieSoundQuest](https://github.com/garfieldra/IndieSoundQuest) 继续开发，保留完整提交历史。旧项目演示地址为 [indiesoundquest.cn](https://indiesoundquest.cn/)，不代表本分支已部署。品牌与运行配置调整见 [SoundSeek 改名说明](./docs/soundseek-branding.md)。
+## 核心功能
 
-## 界面预览
+| 功能 | 体验 |
+| --- | --- |
+| 多轮音乐探索 | Agent 结合会话、偏好和上一轮结果寻找歌曲与艺人。推荐卡保留曲目、来源和试听入口，可以收藏、反馈或继续追问。 |
+| 歌曲深度研究 | Agent 按需检索和精读公开资料，核验作品、录音与署名。分析卡展示来源、证据边界及冲突。 |
+| 图片与文档对话 | 在首页或工作台添加图片、TXT、Markdown 和可提取文字的 PDF。可以预览、混合发送及刷新后追问。点击文档引用，可查看对应的 PDF 页文字或带行号的文本片段。 |
+| 我的音乐 | 保存与搜索歌曲、回看推荐理由、把收藏带回对话继续探索。试听使用 Apple iTunes US 目录，并提供平台搜索入口。 |
+| 探索报告与歌曲世界杯 | 可生成探索报告。用户明确发起两两对决时，Agent 可准备 16 或 32 首歌的比赛，完成后生成赛后偏好报告。 |
+| 账号与资产同步 | 邮箱确认注册、找回和修改密码、修改邮箱、全端退出，以及配置后可用的 GitHub 登录。 |
 
-首页以简短介绍、唱片视觉和会话输入构成。输入后点击“开始探索”，会创建独立会话并将首条消息发送给 Agent，然后平滑进入对应的探索工作台。支持 Enter 发送、Shift+Enter 换行、草稿保留和失败重试。布局与衔接说明见 [首页设计](./docs/homepage-design.md)。
+## AI 与 Web 实现
 
-探索工作台采用三栏布局：左侧管理持久化会话，中间承载对话、工具摘要与结果卡片，右侧展示会随 ReAct 决策滚动调整的计划。模型运行时只公开可展示的步骤与耗时，不暴露思维链。
+- **统一 ReAct Agent。** LangGraph 运行时通过 Function Calling 选择动作，按需搜索、核验、读取资料、澄清或生成结果。公开网络负责发现线索，MusicBrainz 核验歌曲与艺人身份，Java 负责规范化与落库。
+- **带来源的音乐证据库。** 维护者录入或导入资料，审核后发布。检索结合实体约束、精确匹配与 Milvus 向量召回，再回查已发布版本和来源。证据库补充事实、归因和解释，公开网络与 MusicBrainz 继续承担歌曲发现和身份核验。
+- **图像理解与文档问答。** 图片以多模态输入交给模型。文档由服务端解析，长文档可由 Agent 自主搜索和按页读取。上传资料按会话鉴权，公开引用可定位到对应文字。
+- **可恢复的流式交互。** React 从首页按需加载探索工作台。SSE 展示可公开的计划、工具摘要和回答，断线后可继续接收。生成时可以停止、排队发送下一条消息，或显式补充本轮方向。
 
-![寻声 SoundSeek 探索工作台](./docs/assets/home.png)
-
-截图为本地前端使用示例会话数据的品牌预览，不代表在线服务或真实 AI 调用验收。
-
-## 为什么做这个项目
-
-多数音乐推荐产品依赖平台内部行为数据，普通用户很难知道“为什么推荐给我”，也很难用自然语言连续修正方向。本项目尝试把音乐探索变成一个可解释、可追问、可操作的 Agent 过程：
-
-- 支持“更冷一点”“换一批”“不要这些艺人”“保留上一轮那首”等上下文相关追问；
-- 公开网络负责发现新内容，本地曲库不会限制用户的兴趣范围；
-- MusicBrainz 负责身份核验，避免把搜索结果中的同名歌曲和艺人直接写入业务库；
-- 推荐、报告、候选池和赛事结果都以持久化卡片存在，而不是一次性文本；
-- 前端只展示可公开的计划、工具摘要和结果，不展示模型思维链、密钥或内部地址。
-
-## 当前能力
-
-### 对话式音乐探索
-
-- 访客会话与消息持久化；
-- 统一音乐探索 Agent，每轮对话由 ReAct Supervisor 自主选择工具；
-- 同时装配近期文本、会话摘要、长期偏好、推荐反馈和历史卡片；
-- 普通问答、公开资料研究、歌曲/艺人推荐与探索报告；
-- 推荐卡默认展示 5–7 首已核验歌曲与 2–3 位艺人，并保留来源、封面、试听或平台搜索入口；
-- 对上一轮推荐进行“更冷、更偏现场、换一批、排除某艺人”等增量修正；
-- 喜欢、不适合等显式反馈沉淀为偏好事件，供后续对话使用。
-
-### 图片与文档对话
-
-- 首页与探索工作台通过输入框左下角＋混合添加图片、TXT、Markdown和文字型PDF；
-- 图片显示缩略图，文档显示原文件名与页数/片段数；默认最多三格，第三个实际附件覆盖＋N，支持展开、移除、预览和失败重试；
-- 短文档完整提供文字，长文档由同一个ReAct Agent自主选择关键词搜索、按页读取及停止时机；
-- 回答的文档引用可点击定位原始PDF页或带行号的文本片段，刷新追问、排队及显式介入保留附件；
-- 每条消息最多10个附件、每个8MiB、总计20MiB；PDF最多100页、文档最多500,000字符，超限明确提示；
-- 扫描件、加密或损坏PDF明确拒绝；混合PDF标明无法提取的页，不宣称完整理解；
-- 文件只对所有者开放，访客登录合并归属；原文件与提取文字保存于受保护持久卷，不直接把附件字节或解析缓存写入Run和公开事件；对话原文与公开回答仍按既有记忆策略保存。
-
-设计与验收见 [图片附件](Specs/04-功能规格/28-对话图像附件与多模态消息.md) 和 [文档附件与可追溯问答](Specs/04-功能规格/29-会话文档附件与可追溯问答.md)。沿用DeepSeek Key：文档由服务端本地解析，图片使用模型视觉能力，无须增加文档解析API Key。
-
-部署需执行至 V28 的 Flyway 迁移，并保留 Compose 的 `image-attachment-data` 卷。V28 将旧图片表迁移为通用会话附件表，旧图片文件继续可用。备份必须同时覆盖数据库与该卷。会话附件默认不进入公共RAG知识库。 已执行过多模态分支旧版 V24/V25 附件迁移的数据库，需要先单独核对并处理 Flyway 迁移历史，再切换到本分支。
-
-### 我的音乐
-
-- 推荐卡保存歌曲，按歌名或艺人搜索，按保存时间分页读取；
-- 音乐库与推荐卡共享单个试听播放器，US 无可靠资源时保留网易云搜索；
-- 查看原推荐来源，或把规范歌曲信息追加为提问草稿，确认后继续探索；
-- 访客保存可在登录时合并到账户并去重，保存独立于偏好反馈；
-- 切换音乐库保留当前对话草稿和运行订阅，来源对话删除后保留歌曲与推荐理由。
-
-设计与验收见 [我的音乐规格](Specs/04-功能规格/27-我的音乐歌曲保存与再次探索.md)。独立本地环境可运行 `python3 Demos/verify_saved_song_library.py`，该脚本会创建测试访客和账户，不调用模型。
-
-### 账号与邮件验证
-
-邮箱注册需先通过邮件确认；支持找回密码、修改密码/邮箱和退出全部设备。现有 GitHub 登录与访客数据归并保留。账号停用与清理范围预览通过受控运维命令执行，本版本不提供物理删除。
-
-发信通过 Java SMTP 适配器和加密事务队列完成；默认关闭，未配置时不会假报发送成功。开发可使用本地 Mailpit 收件箱，配置与验收边界见 [账号维护说明](./docs/account-maintenance.md)。维护者改按已验证账户 UUID 配置 `KNOWLEDGE_MAINTAINER_IDS`，旧邮箱名单不再授予权限。
-
-### 人工维护的音乐证据库
-
-- 维护者手动录入、导入 JSON/JSONL、整理 Markdown/TXT 或读取指定公开网页；模型辅助提取可选；
-- 草稿、审核、发布彼此独立，修改创建新版本，撤回立即阻止新检索使用；
-- 已核验作品/录音约束、精确与向量召回、Java 权威回查和稳定证据引用；
-- 发布前使用固定模型分词器校验完整文档，超过 480 token 时提示拆分；
-- 支持索引任务重试、对账、独立代次重建、验收后切换及回退；
-- 入口为 `/#knowledge` 或 `/explore#knowledge`，普通账户没有维护权限。
-
-资料来源由维护者主动选择；当前未启用自动收集。知识库补充事实、归因和解释，歌曲发现仍由公开网络与 MusicBrainz 完成。操作与兼容约定见 [RAG 维护说明](./docs/rag-maintenance.md)。
-
-### 可选歌曲世界杯 Skill
-
-- 16/32 首单败淘汰赛；
-- Agent 生成两倍候选：16 首赛事准备 32 首、32 首赛事准备 64 首，未展示部分作为补位池；
-- 支持单艺人世界杯、跨艺人探索和完全手动选择；
-- 具名艺人存在身份歧义时先阻塞生成并请求确认；
-- 在线发现、MusicBrainz 核验、Java 规范化落库、候选确认后开赛；
-- 投票事务、乐观锁、唯一约束与幂等保护；
-- 完整对阵、冠军结果、选择轨迹、赛后报告与长图导出。
-
-### Agent 运行与工程化
-
-- Agent Run 控制面、RabbitMQ Worker、Transactional Outbox；
-- 可恢复 SSE 事件流，展示滚动计划、工具调用摘要、降级和结果；
-- Redis 幂等缓存、限流、热点状态与短期互斥；
-- Agent 任务租约、心跳、失败重试和中断恢复；
-- Java 对 Agent 输出执行最终 Schema 校验和事务落库；
-- Resilience4j 超时、重试、限流、熔断与 Provider 级降级；
-- OpenTelemetry、Prometheus、Tempo、Grafana 可观测性链路。
-
-## 系统架构
+## 技术架构
 
 ```mermaid
 flowchart LR
-    U[用户] --> W[React Web]
-    W -->|REST / SSE| J[Java 业务服务]
-
-    J --> DB[(MySQL)]
-    J --> R[(Redis)]
-    J --> O[Transactional Outbox]
-    O --> MQ[(RabbitMQ)]
-    MQ --> AW[Agent Worker]
-    J -->|Agent 调用 / 发布前长度检查| A[Python Agent Service]
-    MQ --> KW[知识 Worker]
-    KW -->|向量化 / 版本化索引| V[(Milvus)]
-    A -->|知识版本与来源回查| J
-
-    A --> L[DeepSeek / 可替换 LLM]
-    A --> S[博查 / Tavily]
-    A --> MB[MusicBrainz]
-    A -.补充语义证据.-> V
-    A -.可选研究侧车.-> CN[知乎 / B站 / 豆瓣]
-
-    AW --> J
-    A --> OT[OpenTelemetry]
-    J --> OT
-    OT --> OBS[Tempo / Prometheus / Grafana]
+    Web["React + TypeScript + Vite"] -->|REST / SSE| Java["Java 21 / Spring Boot"]
+    Java --> DB[("MySQL")]
+    Java --> Redis[("Redis")]
+    Java -->|事务 Outbox| Queue[("RabbitMQ")]
+    Java -->|同步接口| Agent["FastAPI / LangGraph"]
+    Queue --> Worker["Agent Worker"]
+    Worker --> Agent
+    Worker -->|回传事件和结果| Java
+    Agent --> Tools["DeepSeek / 博查 / Tavily / MusicBrainz"]
+    Queue --> Knowledge["知识索引 Worker"]
+    Knowledge --> Milvus[("Milvus")]
+    Agent -->|检索审核资料| Milvus
+    Agent -->|回查权威版本| Java
 ```
 
-职责边界：
-
-| 组件 | 主要职责 |
+| 目录 | 职责与依赖 |
 | --- | --- |
-| React Web | 多轮对话、持久化卡片、候选确认、比赛、报告及长图展示 |
-| Java Service | REST API、会话与赛事领域模型、事务一致性、幂等、Agent Run 控制面、最终落库 |
-| Python Agent Service | LangGraph ReAct 决策、工具选择、候选池/报告等复合 Tool、结构化输出 |
-| Agent Worker | 消费异步任务、维护租约和心跳、回传事件及最终结果 |
-| 知识 Worker | 消费独立知识索引任务、嵌入、版本化写入/删除及租约回报 |
-| MySQL / Redis / RabbitMQ | 持久化、缓存与互斥、异步消息 |
-| Milvus | 已发布事实与主题解释的可重建语义索引；结果必须回查 Java，不是歌曲发现主链路 |
+| [web](./web/) | React 18、TypeScript、Vite 和 Vitest。首页、对话工作台、附件预览、报告和账号界面。 |
+| [java-service](./java-service/) | Java 21、Spring Boot 3.4、Spring Security、Flyway。维护会话、附件权限、领域数据和 Agent Run。 |
+| [agent-service](./agent-service/) | Python 3.12、FastAPI、LangGraph、LangChain 和 Pydantic。运行统一 Agent、工具与后台 Worker。 |
+| [infra](./infra/) | Docker Compose。MySQL 持久化、Redis 会话与限流、RabbitMQ 任务队列，以及可选的知识索引和可观测性组件。 |
+| [Demos](./Demos/) | 接口验收脚本与歌曲推荐、分析、知识检索评测。 |
 
-## Agent 设计
+## 安装与运行
 
-对外只存在一个统一音乐探索 Agent。内部能力分为两层：
+### 1. 准备环境并下载代码
 
-- 原子 Tool：网络搜索、知识库检索、MusicBrainz 核验、偏好反馈记录；
-- 复合 Tool：普通音乐推荐、候选池构建、赛事分析、探索报告和赛后报告。
-
-歌曲世界杯被注册为 Skill，而不是默认路由。ReAct Supervisor 根据用户显式意图、当前观察、工具预算和会话上下文决定下一步；护栏只负责安全、预算、契约校验和无收益循环阻断，不把 Agent 退化成固定工作流。
-
-候选发现遵循以下数据边界：
-
-```text
-公开网络发现 → MusicBrainz 身份核验 → Java 规范化与去重 → 推荐卡 / 候选池 / 赛事
-                              ↑
-                人工审核的事实、归因和主题材料补充解释
-```
-
-## 数据与外部服务
-
-| 来源 | 定位 | 是否为主链路 |
-| --- | --- | --- |
-| 博查 Web Search | 中文查询和在线音乐线索发现 | 是，中文查询优先 |
-| Tavily | 通用网络搜索与降级来源 | 是，按查询与可用性选择 |
-| MusicBrainz | 艺人、作品、录音的规范身份核验 | 是 |
-| Cover Art Archive | MusicBrainz 关联封面 | 是 |
-| Apple iTunes Search | 可用时补充试听与播放信息 | 否 |
-| 网易云音乐 | 显式平台搜索跳转，不调用非公开 API | 否 |
-| 知乎 / B站 / 豆瓣 | 受控研究侧车，补充创作背景与文化语境 | 可选 |
-| 人工知识库 / Milvus | 已发布事实、归因观点、文化语境与主题解释，权威状态在 MySQL | 可选增强 |
-
-任何 API Key 只由服务端环境变量管理，不进入仓库、日志、SSE 或模型上下文。项目不保存和分发完整受版权保护的音频。
-
-Apple 试听统一使用 US 目录，开发与生产配置均为 `APPLE_ITUNES_STOREFRONT=US`。不做跨地区自动回退；US 无可靠匹配时显示“暂无试听”，保留平台搜索入口。若已有部署显式设置了其他地区，需要将该环境变量同步改为 US 并重建／重启 Java 服务。缓存按目录隔离，无需清理旧 CN 数据。
-
-## 技术栈
-
-| 层 | 技术 |
-| --- | --- |
-| 前端 | React 18、TypeScript、Vite、Vitest、html-to-image |
-| Java 后端 | Java 21、Spring Boot 3.4、Spring Data JPA、Spring Web、Springdoc OpenAPI |
-| Agent | Python 3.12、FastAPI、LangGraph、LangChain、Pydantic |
-| 数据 | MySQL 8.4、Flyway、Redis 7.4、Milvus 2.4 |
-| 异步 | RabbitMQ、Transactional Outbox、Worker Lease |
-| 韧性与观测 | Resilience4j、Micrometer、OpenTelemetry、Prometheus、Tempo、Grafana |
-| 交付 | Docker Compose、Caddy（生产配置） |
-
-## 目录结构
-
-```text
-ProjectChuanZhi/
-├── web/                  # React 对话、卡片、赛事与报告界面
-├── java-service/         # Java 领域服务、API、迁移和异步控制面
-├── agent-service/        # 统一 ReAct Agent、工具、复合能力与 Worker
-├── zhihu-research/       # 可选知乎开放平台研究侧车
-├── bilibili-research/    # 可选 B 站公开内容研究侧车
-├── douban-research/      # 可选豆瓣公开内容研究侧车
-├── infra/                # 本地/生产 Compose 与可观测性配置
-├── Demos/                # 数据处理、模块验证和端到端验收脚本
-├── docs/                 # 当前设计、维护、品牌及验证记录
-└── Specs/                # 产品、数据、架构和功能规格
-```
-
-## 本地启动
-
-### 前置条件
-
-- Docker Desktop（建议给 Docker 分配至少 8 GB 内存）；
-- Docker Compose v2；
-- 一个 DeepSeek API Key；
-- 至少配置博查或 Tavily 中的一个搜索 Key，才能获得完整的在线推荐体验。
-
-首次构建会下载 Java、Node、Python、Milvus 和可观测性相关镜像/依赖；网络不稳定时请参考 [Docker 本地排障手册](./Specs/00-总览与规范/12-Docker本地排障手册.md)。
-
-### 1. 配置环境变量
+安装 Git 和 Docker Desktop，或准备已启用 Docker Compose 插件的 Docker Engine。启动 Docker 后，在终端执行以下命令。Compose 会在构建时安装前端、Java 和 Python 的依赖。
 
 ```bash
+git clone https://github.com/garfieldra/ProjectChuanZhi.git
+cd ProjectChuanZhi
 cp .env.example .env
 ```
 
-编辑 `.env`，至少填写：
+### 2. 配置本地环境
 
-| 变量 | 用途 |
-| --- | --- |
-| `DEEPSEEK_API_KEY` | 默认大模型 |
-| `BOCHA_API_KEY` | 中文在线搜索，推荐配置 |
-| `TAVILY_API_KEY` | 通用搜索与降级，可选 |
-| `AGENT_INTERNAL_SERVICE_TOKEN` | Java 与 Agent 内部接口鉴权，请替换示例值 |
-| `MYSQL_*` | 本地数据库与用户密码 |
-| `RABBITMQ_DEFAULT_*` | 异步任务队列凭证 |
+按 [环境变量模板](./.env.example) 编辑本地 `.env`，为数据库、消息队列和服务间鉴权设置独立凭据。体验完整的 AI 对话和在线推荐时，在本地配置模型服务和至少一个搜索服务的凭据。真实凭据仅保存在本地 `.env` 或部署环境中。
 
-不要将 `.env` 提交到 Git。
+### 3. 构建并启动服务
 
-### 2. 启动主链路
+在项目根目录运行。首次构建需要下载镜像和依赖。
 
 ```bash
-docker compose --env-file .env -f infra/compose.yaml up -d --build \
-  web agent-service agent-worker
-```
-
-Compose 会自动启动 Java、MySQL、Redis、RabbitMQ，以及当前 `agent-worker` 仍声明依赖的旧 Milvus、etcd 和 MinIO。音乐证据型 RAG 使用下面单独启用的 `knowledge-milvus`，不将旧集合直接作为正式知识库。
-
-### 3. 检查服务
-
-```bash
+docker compose --env-file .env -f infra/compose.yaml up -d --build web agent-service agent-worker
 docker compose --env-file .env -f infra/compose.yaml ps
-curl http://localhost:8080/actuator/health
 ```
 
-本地入口：
+打开 <http://localhost:5173>。可先以访客身份输入“推荐几首适合夜晚散步的独立流行，我喜欢徐佳莹”，再从推荐卡试听、收藏或继续追问。Java API 文档在 <http://localhost:8080/swagger-ui/index.html>。
 
-- Web：<http://localhost:5173>
-- Java 健康检查：<http://localhost:8080/actuator/health>
-- Swagger UI：<http://localhost:8080/swagger-ui/index.html>
-- Grafana（启动可观测性组件后）：<http://localhost:3000>
-
-Agent 服务只在 Compose 网络内开放，可通过下面的命令检查：
+如果页面未能打开，先确认容器状态，再检查 Java 的健康接口和相关服务日志。
 
 ```bash
-docker compose --env-file .env -f infra/compose.yaml exec agent-service \
-  curl -fsS http://localhost:8000/health/ready
+curl -fsS http://localhost:8080/actuator/health
+docker compose --env-file .env -f infra/compose.yaml logs --tail=80 web java-service agent-service agent-worker
 ```
 
-### 4. 可选：启用人工知识库
+### 4. 按需启用音乐证据库和邮箱注册
 
-在 `.env` 中设置 `KNOWLEDGE_MAINTAINER_IDS` 为已注册且邮箱已验证的维护者账户 UUID，然后使用知识组件叠加配置启动：
+启用音乐证据库后，可以检索已审核发布的音乐资料。维护者需要已验证的邮箱，账户 UUID 需列入 `KNOWLEDGE_MAINTAINER_IDS`。配置方法和导入流程见 [RAG 维护说明](./docs/rag-maintenance.md)。
 
 ```bash
 docker compose --env-file .env -f infra/compose.yaml -f infra/compose.knowledge.yaml \
   --profile knowledge up -d --build web agent-service agent-worker knowledge-worker
 ```
 
-浏览器访问 `http://localhost:5173/#knowledge`。默认维护者名单为空；登录/退出后，页面会重新查询服务端维护权限。新知识库使用独立数据卷，模型缓存需持久保留。Java 包、知识队列及新集合已统一使用 `soundseek`；数据库迁移为主干 V23 收藏表 → V24 知识库 → V25 固定模型修订。已有旧版 RAG 试验库的兼容要求见 [维护说明](./docs/rag-maintenance.md)。
-
-### 5. 可选：启用国内内容研究侧车
-
-先在 `.env` 中开启对应的 `*_RESEARCH_ENABLED` 配置；知乎还需要 `ZHIHU_ACCESS_SECRET`。然后执行：
+本地测试邮箱注册前，按 [账号维护说明](./docs/account-maintenance.md) 生成并配置本地邮件加密密钥。启动以下配置后，在 <http://127.0.0.1:8025> 查看 Mailpit 测试收件箱。
 
 ```bash
-docker compose --env-file .env -f infra/compose.yaml \
-  --profile domestic-research up -d --build \
-  zhihu-research bilibili-research douban-research
+docker compose --env-file .env -f infra/compose.yaml -f infra/compose.auth-mail.yaml \
+  --profile auth-mail up -d --build web agent-service agent-worker
 ```
 
-这些侧车不会对宿主机开放端口，也不是完成普通推荐所必需的依赖。
+同时体验两项能力时，在同一条启动命令里传入两个叠加文件及各自的 profile，并启动 `knowledge-worker`。正式 SMTP 和 GitHub 登录配置见 [账号维护说明](./docs/account-maintenance.md)。
 
-### 6. 停止服务
+### 5. 停止服务
 
 ```bash
 docker compose --env-file .env -f infra/compose.yaml down
 ```
 
-若启动时启用了知识组件，停止时也带上 `-f infra/compose.knowledge.yaml --profile knowledge`，保持同一 Compose 项目和配置。默认不会删除数据卷；只有明确需要清空对应环境数据时才额外使用 `down -v`。
+使用了叠加配置时，停止命令也应带上相同的 Compose 文件和 profile。以上停止命令会保留数据卷。
+
+### 部署与数据
+
+公网部署参考 [生产环境变量](./.env.production.example)、[Caddy 配置](./web/Caddyfile)和 [生产 Compose 模板](./infra/compose.production.yaml)。当前生产模板还需补齐 RabbitMQ 和 Agent Worker，并复验公开环境下的流式对话。演示完整功能可用上面的本地配置。
+
+Flyway 当前迁移到 `V28`。备份应同时覆盖 MySQL 和 Java 的附件目录 `/app/data/attachments`。本地 Compose 目前把附件卷挂在 Web 容器上，需要将卷挂到 Java 容器才能让附件跨容器重建保留。复用曾执行旧版 `V24`、`V25` 附件迁移的库时，先核对 Flyway 历史再切换。
 
 ## 测试与验收
 
-### 单元测试和构建
+2026 年 11 月 16 日，主分支合并提交 `a32d22a` 通过 **Web 84 项、Java 79 项、Agent 140 项**测试，Web 生产构建和 Java 打包通过。Java 21 容器中的集成测试验证了账号安全、RAG 接口、任务队列和附件迁移。
 
 ```bash
-# Java
-mvn -q test -f java-service/pom.xml
-
-# Python Agent（通过 Docker test stage）
-docker build --target test -t soundseek-agent-test agent-service
-docker run --rm soundseek-agent-test
-
-# Web
+npm --prefix web ci
 npm --prefix web test
 npm --prefix web run build
+
+docker build --target test -t soundseek-agent-test agent-service
+docker run --rm soundseek-agent-test
 ```
 
-### 已启动环境的接口验收
+Java 回归可在 Docker Desktop 上使用 Java 21 容器执行。Testcontainers 会启动独立的 MySQL、Redis 和 RabbitMQ。
 
 ```bash
-# 完整用户流程
-python3 Demos/verify_full_user_flow.py
-
-# 赛事领域 API
-python3 Demos/verify_tournament_api.py
-
-# 外部音乐 Provider
-python3 Demos/verify_music_providers.py
+docker run --rm \
+  -v "$PWD/java-service:/source:ro" \
+  -v soundseek-maven-cache:/root/.m2/repository \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -e TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal \
+  maven:3.9-eclipse-temurin-21 \
+  sh -ec 'mkdir -p /tmp/soundseek-java && cp -R /source/pom.xml /source/src /tmp/soundseek-java/ && cd /tmp/soundseek-java && mvn -B -Dapi.version=1.44 verify'
 ```
 
-外部 Provider 验收会受到网络、配额和第三方服务状态影响；失败时先区分业务回归与外部依赖降级。
+已启动的应用可用 [端到端验收脚本](./Demos/verify_full_user_flow.py)和 [音乐服务验收脚本](./Demos/verify_music_providers.py)验证，涉及模型或外部服务的场景需要对应配置。
 
-## 规格文档
+- [图片理解验收](./Specs/04-功能规格/28-对话图像附件与多模态消息.md) · [文档问答验收](./Specs/04-功能规格/29-会话文档附件与可追溯问答.md) — 真实模型、桌面及移动尺寸交互。
+- [RAG 验收](./docs/rag-validation.md) · [检索评测方法](./Demos/evals/knowledge/README.md) — 索引、检索和引用已在隔离环境验证，真实音乐语料的召回和引用支持率待评测。
+- [账号验收](./docs/account-validation.md) — 隔离 SMTP 发信、邮箱确认、找回、旧会话撤销和访客归并。正式 SMTP 投递和真实 GitHub OAuth 需在配置后复验。
 
-完整导航见 [Specs/README.md](./Specs/README.md)。建议从以下文档开始：
+更多设计见 [规格目录](./Specs/README.md)、[首页交互](./docs/homepage-design.md)和 [工作台视觉规范](./docs/workspace-visual-system.md)。
 
-1. [系统总体设计与规格路线图](./Specs/00-总览与规范/00-系统总体设计与规格路线图.md)
-2. [MVP 产品规格](./Specs/01-产品/03-MVP产品规格：歌曲世界杯与音乐探索.md)
-3. [对话式会话运行时](./Specs/03-技术架构/11-对话式会话运行时技术规格.md)
-4. [音乐探索 Agent 自主决策架构](./Specs/03-技术架构/12-音乐探索Agent运行时与自主决策架构.md)
-5. [异步 Agent Run、Worker 与可恢复事件流](./Specs/03-技术架构/16-异步AgentRun、Worker与可恢复事件流规格.md)
-6. [歌曲世界杯核心闭环](./Specs/04-功能规格/歌曲世界杯/01-歌曲世界杯核心闭环.md)
+## 参赛团队
 
-## 人工维护音乐知识库
-
-音乐证据型 RAG 支持维护者导入资料、人工审核发布、版本更新与撤回，以及统一 Agent 按需检索和引用。自动收集只预留候选提交契约，当前不启用。知识库不会替代在线歌曲发现与 MusicBrainz 核验。
-
-启动可选知识服务、维护者权限、资料格式及验收方法见 [RAG 维护说明](./docs/rag-maintenance.md)；完整方案见 [RAG 设计](./docs/rag-design.md)，测试范围见 [验收记录](./docs/rag-validation.md)。默认没有维护者权限，需在服务端配置 `KNOWLEDGE_MAINTAINER_IDS`。浏览器操作、截图及修复结果见 [浏览器验收记录](./docs/rag-browser-acceptance.md)。
-
-截至 2026-11-10，合并 `main@d317353` 后的回归为 **Java 51 项、Agent 124 项、Web 66 项通过**，前端生产构建与 Compose 配置检查通过。浏览器验收使用合成材料；这些结果不代表真实音乐语料的检索质量指标已达标，也不代表已经部署到公网。
-
-## 当前实现与边界
-
-这是一个持续迭代的求职作品项目，目前已经跑通对话、推荐、候选池、比赛、报告、异步任务与基础可观测性主链路。当前版本仍保留这些边界：
-
-- 支持访客会话与可选账户同步；知识维护权限由服务端显式配置；
-- 不提供用户社交、评论或公开内容发布；
-- 不调用网易云、QQ 音乐等平台的非公开接口；
-- 国内内容研究属于增强能力，任一侧车不可用时不应阻塞主流程；
-- Milvus 只增强解释质量，不负责决定可推荐的歌曲集合。
-
-如果你准备阅读代码，建议按 `ConversationController → AgentRunApplicationService → ConversationReActRuntime → ToolRegistry/SkillRegistry` 的顺序进入主链路。
+- **学校**　西安交通大学
+- **成员**　李岩润、王睿、王兆晨
