@@ -42,7 +42,7 @@ def evaluate_candidate_result(case: dict[str, Any], result: dict[str, Any], cata
             len(external),
         ) if external else None,
         "activePoolComplete": len(ids) >= active_size,
-        "reservePoolComplete": len(ids) >= active_size * 2,
+        "reservePoolComplete": len(ids) >= active_size + active_size // 2,
         "genericReasonRate": _ratio(generic_count, len(items)),
         "versionCollisionCount": version_collisions,
         "toolBudgetViolationCount": int(int(trace.get("toolCalls", 0)) > 10),
@@ -59,7 +59,7 @@ def evaluate_candidate_result(case: dict[str, Any], result: dict[str, Any], cata
         metrics["versionCollisionCount"] == 0,
         metrics["toolBudgetViolationCount"] == 0,
         metrics["unresolvedHintLeakCount"] == 0,
-        expected_insufficient or metrics["activePoolComplete"],
+        expected_insufficient or metrics["reservePoolComplete"],
     ])
     return metrics
 

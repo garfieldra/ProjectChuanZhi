@@ -86,6 +86,10 @@ public class CandidatePoolApplicationService {
     return ready(requestId, size, agentResult, seedArtistIds);
   }
 
+  public static int minimumCandidateCount(int size) {
+    return size + size / 2;
+  }
+
   private void validateRequest(int size, List<UUID> seedArtistIds) {
     if (size != 16 && size != 32) throw new IllegalArgumentException("赛事规模只能是 16 或 32 首");
     if (seedArtistIds.size() != new HashSet<>(seedArtistIds).size()) {
@@ -110,8 +114,11 @@ public class CandidatePoolApplicationService {
 
   private CandidatePoolResponse ready(UUID requestId, int size, JsonNode result, List<UUID> seedArtistIds) {
     var orderedIds = parseIds(result.path("recordingIds"));
-    if (orderedIds.size() < size) throw contract("Agent 返回的候选歌曲不足以开赛");
-    if (orderedIds.size() > size * 2) throw contract("Agent 返回的候选歌曲超过目标上限");
+    int minimum = minimumCandidateCount(size);
+    if (orderedIds.size() < minimum) throw contract("Agent 返回的候选歌曲少于 " + minimum + " 首");
+    if (!"ARTIST_LOCKED".equals(result.path("intentPolicy").path("intentMode").asText()) && orderedIds.size() > minimum) {
+      throw contract("Agent 返回的开放候选歌曲超过目标上限");
+    }
     if (new HashSet<>(orderedIds).size() != orderedIds.size()) throw contract("Agent 返回了重复歌曲");
 
     var found = recordings.findByIdInWithArtist(orderedIds);
@@ -127,11 +134,6 @@ public class CandidatePoolApplicationService {
     var items = orderedIds.stream().map(id -> toItem(byId.get(id), explanations.get(id))).toList();
     var reserveSize = orderedIds.size() - size;
     var warnings = normalizedWarnings(result.path("warnings"));
-    if (reserveSize < size) {
-      warnings.putIfAbsent(
-          "RESERVE_CANDIDATES_INSUFFICIENT",
-          new WarningView("RESERVE_CANDIDATES_INSUFFICIENT", "已满足开赛数量，但候补歌曲少于目标数量。"));
-    }
     return new CandidatePoolResponse(
         READY,
         new CandidatePoolView(
@@ -188,7 +190,8 @@ public class CandidatePoolApplicationService {
     var allowedIds = new HashSet<UUID>();
     if (!seedArtistIds.isEmpty()) {
       allowedIds.addAll(seedArtistIds);
-    } else if (policy.path("allowedArtistIds").isArray()) {
+    }
+    if (policy.path("allowedArtistIds").isArray()) {
       for (var node : policy.path("allowedArtistIds")) {
         try { allowedIds.add(UUID.fromString(node.asText())); }
         catch (RuntimeException exception) { throw contract("Agent 返回的限定艺人 ID 无效"); }

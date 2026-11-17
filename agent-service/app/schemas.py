@@ -16,12 +16,16 @@ class CandidatePoolRequest(ApiModel):
     request_id: UUID
     guest_id: str
     size: Literal[16, 32]
-    candidate_count: Literal[32, 64] | None = None
+    candidate_count: Literal[24, 32, 48, 64] | None = None  # Accept queued requests from previous versions.
     preference_text: str = Field(min_length=3, max_length=1000)
     seed_artist_ids: list[UUID] = Field(default_factory=list)
     confirmed_artists: list["ConfirmedArtist"] = Field(default_factory=list, max_length=8)
     exclude_recording_ids: list[UUID] = Field(default_factory=list)
     recent_feedback: list[str] = Field(default_factory=list, max_length=12)
+
+    @property
+    def minimum_candidate_count(self) -> int:
+        return self.size + self.size // 2
 
 
 class ConversationAgentRequest(ApiModel):

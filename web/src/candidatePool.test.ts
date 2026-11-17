@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { deriveCandidateSelection, type CandidateItem } from './candidatePool'
+import { deriveCandidateSelection, minimumCandidateCount, type CandidateItem } from './candidatePool'
 
 function candidates(count: number): CandidateItem[] {
   return Array.from({ length: count }, (_, index) => ({
@@ -15,11 +15,15 @@ function candidates(count: number): CandidateItem[] {
 }
 
 describe('deriveCandidateSelection', () => {
-  it('将 32 首稳定拆成 16 首参赛和 16 首候补', () => {
-    const result = deriveCandidateSelection(candidates(32), new Set(), 16)
-    expect(result.activeItems).toHaveLength(16)
-    expect(result.reserveItems).toHaveLength(16)
-  })
+  it.each([[16, 24, 8], [32, 48, 16]] as const)(
+    '%i 首赛事要求 %i 首候选，其中 %i 首候补',
+    (size, minimum, reserve) => {
+      expect(minimumCandidateCount(size)).toBe(minimum)
+      const result = deriveCandidateSelection(candidates(minimum), new Set(), size)
+      expect(result.activeItems).toHaveLength(size)
+      expect(result.reserveItems).toHaveLength(reserve)
+    },
+  )
 
   it('移除第一首后由原第 17 首补位', () => {
     const result = deriveCandidateSelection(candidates(32), new Set(['recording-1']), 16)

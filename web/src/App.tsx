@@ -1,7 +1,8 @@
 import { type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from './apiClient'
 import { toPng } from 'html-to-image'
-import { deriveCandidateSelection, intentModeLabel, type ArtistChoice, type CandidateItem, type CandidatePoolResponse } from './candidatePool'
+import { CandidateReserveList } from './CandidateReserveList'
+import { deriveCandidateSelection, intentModeLabel, minimumCandidateCount, type ArtistChoice, type CandidateItem, type CandidatePoolResponse } from './candidatePool'
 import { playbackLabel, type PlaybackState, useListeningPreview } from './listening'
 import { TournamentResultView } from './tournamentResultView'
 import { sourcePresentation } from './sourcePresentation'
@@ -115,26 +116,17 @@ export function App({ embedded = false, onExit }: { embedded?: boolean; onExit?:
       catch { setReport(null) }
     }
   }
-  async function createTournament() {
-    if (!artistId) return
-    setLoading(true); setMessage('')
-    try {
-      const payload = { artistId, size }
-      const created = await api<{ id: string; status: string }>('/tournaments', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': creationKeyFor(payload) }, body: JSON.stringify(payload) })
-      if (created.status === 'DRAFT') await api(`/tournaments/${created.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'READY' }) })
-      await refresh(created.id)
-      creationAttempt.current = null
-    } catch (error) { setMessage(error instanceof Error ? error.message : '创建赛事失败') }
-    finally { setLoading(false) }
-  }
   async function generateCandidates(nextConfirmedArtists = confirmedArtists) {
-    if (preferenceText.trim().length < 3) { setMessage('请用一句话描述你想探索的音乐。'); return }
+    const selectedArtist = mode === 'popular' ? artists.find(artist => artist.id === artistId) : undefined
+    const seedId = selectedArtist?.id || seedArtistId
+    const preference = selectedArtist ? `用${selectedArtist.name}的作品办一场歌曲世界杯` : preferenceText
+    if (preference.trim().length < 3) { setMessage('请用一句话描述你想探索的音乐。'); return }
     setLoading(true); setAgentRunActive(true); setMessage(''); setAgentProgress([]); setAgentPlan(null); setProgressCollapsed(false)
     try {
       const requestId = crypto.randomUUID()
-      const data = await queuedAgentRun<CandidatePoolResponse>('/agent-runs/candidate-pool', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId }, body: JSON.stringify({ size, preferenceText, seedArtistIds: seedArtistId ? [seedArtistId] : [], confirmedArtists: nextConfirmedArtists }) }, item => setAgentProgress(current => [...current, item]), setAgentPlan)
+      const data = await queuedAgentRun<CandidatePoolResponse>('/agent-runs/candidate-pool', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId }, body: JSON.stringify({ size, preferenceText: preference, seedArtistIds: seedId ? [seedId] : [], confirmedArtists: nextConfirmedArtists }) }, item => setAgentProgress(current => [...current, item]), setAgentPlan)
       setCandidateResult(data); setExcludedIds([]); setPreparingTournamentId(null); creationAttempt.current = null
-      if (conversationId) await persistConversationCard('CANDIDATE_POOL_CARD', 'CANDIDATE_POOL', { size, status: data.status, preferenceText, summary: data.candidatePool?.candidateSummary || '', items: data.candidatePool?.items.map(item => ({ recordingId: item.recordingId, title: item.title, artistName: item.artistName, coverUrl: item.coverUrl })) || [] })
+      if (conversationId) await persistConversationCard('CANDIDATE_POOL_CARD', 'CANDIDATE_POOL', { size, status: data.status, preferenceText: preference, summary: data.candidatePool?.candidateSummary || '', items: data.candidatePool?.items.map(item => ({ recordingId: item.recordingId, title: item.title, artistName: item.artistName, coverUrl: item.coverUrl })) || [] })
       if (data.status === 'insufficient_candidates') setMessage(data.candidatePool?.warnings[0]?.message || '可验证歌曲不足，请调整兴趣方向。')
     }
     catch (error) { setMessage(agentErrorMessage(error, '候选歌曲暂时无法生成')) } finally { setLoading(false); setAgentRunActive(false); setProgressCollapsed(true) }
@@ -165,7 +157,7 @@ export function App({ embedded = false, onExit }: { embedded?: boolean; onExit?:
     if (preparingTournamentId) { await prepareExploration(preparingTournamentId); return }
     setLoading(true); setMessage('')
     try {
-      const payload = { size, candidateSource: 'AGENT_GENERATED', recordingIds: candidateSelection.activeItems.map(item => item.recordingId), explorationBrief: preferenceText }
+      const payload = { size, candidateSource: 'AGENT_GENERATED', recordingIds: candidateSelection.activeItems.map(item => item.recordingId), explorationBrief: preferenceText.trim() || candidatePool?.candidateSummary || '' }
       const created = await api<{ id: string; status: string }>('/tournaments', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': creationKeyFor(payload) }, body: JSON.stringify(payload) })
       setPreparingTournamentId(created.id)
       if (created.status === 'DRAFT') await api(`/tournaments/${created.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'READY' }) })
@@ -214,22 +206,24 @@ export function App({ embedded = false, onExit }: { embedded?: boolean; onExit?:
     {message && <p className="notice">{message}</p>}
     {!tournament && <section className="panel setup">
       <div className="mode-tabs">
-        <button className={mode === 'explore' ? 'selected' : ''} onClick={() => setMode('explore')}>按偏好探索</button>
-        <button className={mode === 'popular' ? 'selected' : ''} onClick={() => setMode('popular')}>代表作直接开赛</button>
+        <button disabled={loading} className={mode === 'explore' ? 'selected' : ''} onClick={() => { if (mode !== 'explore') { setMode('explore'); setCandidateResult(null); setConfirmedArtists([]) } }}>按偏好探索</button>
+        <button disabled={loading} className={mode === 'popular' ? 'selected' : ''} onClick={() => { if (mode !== 'popular') { setMode('popular'); setCandidateResult(null); setConfirmedArtists([]) } }}>指定艺人</button>
       </div>
-      {mode === 'popular' ? <>
+      {!candidateResult ? (mode === 'popular' ? <>
         <h2>创建一场赛事</h2>
         <label>艺人<select value={artistId} onChange={event => setArtistId(event.target.value)}>{artists.map(artist => <option key={artist.id} value={artist.id}>{artist.name}</option>)}</select></label>
         <fieldset><legend>候选歌曲</legend><button className={size === 16 ? 'selected' : ''} onClick={() => changeSize(16)}>16 首</button><button className={size === 32 ? 'selected' : ''} onClick={() => changeSize(32)}>32 首</button></fieldset>
-        <button className="primary" disabled={loading || !artistId} onClick={createTournament}>开始这场比赛</button>
-      </> : !candidateResult ? <>
+        <p>至少需要 {minimumCandidateCount(size)} 首已核验候选。</p>
+        <button className="primary" disabled={loading || !artistId} onClick={() => void generateCandidates()}>读取艺人目录</button>
+        {agentFeedback}
+      </> : <>
         <h2>把你的偏好写下来</h2>
         <label>从哪一种声音开始（描述你的音乐喜好，比如喜欢哪位歌手、哪张专辑、哪种风格）<textarea value={preferenceText} onChange={e => setPreferenceText(e.target.value)} placeholder="例如：克制、有叙事感的中文独立音乐，适合夜晚散步。" /></label>
         <label>起点艺人（可选）<select value={seedArtistId} onChange={event => setSeedArtistId(event.target.value)}><option value="">不限定，从文字偏好开始</option>{artists.map(artist => <option key={artist.id} value={artist.id}>{artist.name}</option>)}</select></label>
         <fieldset><legend>赛事规模</legend><button className={size === 16 ? 'selected' : ''} onClick={() => changeSize(16)}>16 首</button><button className={size === 32 ? 'selected' : ''} onClick={() => changeSize(32)}>32 首</button></fieldset>
         <button className="primary" disabled={loading} onClick={() => void generateCandidates()}>{loading ? '正在寻找适合这场比赛的歌曲…' : '生成候选歌曲'}</button>
         {agentFeedback}
-      </> : candidateResult.status === 'needs_clarification' ? <ArtistClarificationView clarifications={candidateResult.clarifications ?? []} loading={loading} feedback={agentFeedback} onConfirm={(choices) => { setConfirmedArtists(choices); void generateCandidates(choices) }} onRestart={() => { setCandidateResult(null); setConfirmedArtists([]); setMessage('') }} /> : candidateResult.status === 'insufficient_candidates' ? <section className="candidate-state" aria-live="polite">
+      </>) : candidateResult.status === 'needs_clarification' ? <ArtistClarificationView clarifications={candidateResult.clarifications ?? []} loading={loading} feedback={agentFeedback} onConfirm={(choices) => { setConfirmedArtists(choices); void generateCandidates(choices) }} onRestart={() => { setCandidateResult(null); setConfirmedArtists([]); setMessage('') }} /> : candidateResult.status === 'insufficient_candidates' ? <section className="candidate-state" aria-live="polite">
         <p className="eyebrow">候选数量不足</p>
         <h2>这次还不足以组成一场比赛</h2>
         <p className="subtitle">{candidatePool?.candidateSummary}</p>
@@ -251,6 +245,7 @@ export function App({ embedded = false, onExit }: { embedded?: boolean; onExit?:
           onRemove={() => removeCandidate(item.recordingId)}
           removeDisabled={loading || !candidateSelection.canRemove}
         />)}</div>
+        <CandidateReserveList items={candidateSelection.reserveItems} />
         {!candidateSelection.canRemove && <p className="candidate-warning" aria-live="polite">候补已用完；你仍可恢复歌曲或重新生成。</p>}
         {candidateSelection.removedItems.length > 0 && <details className="removed"><summary>已移除 {candidateSelection.removedItems.length} 首</summary>{candidateSelection.removedItems.map(item => <div key={item.recordingId}><span><strong>{item.title}</strong><small>{item.artistName}</small></span><button onClick={() => restoreCandidate(item.recordingId)}>恢复</button></div>)}</details>}
         <div className="candidate-actions"><button className="secondary" disabled={loading || Boolean(preparingTournamentId)} onClick={() => void generateCandidates()}>重新生成</button><button className="primary" disabled={loading || candidateSelection.activeItems.length !== size} onClick={startExploration}>{preparingTournamentId ? '重试进入赛事' : '以这组歌曲开赛'}</button></div>{agentFeedback}

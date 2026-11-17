@@ -50,6 +50,10 @@ export type CandidatePoolResponse = {
 export type ArtistChoice = { mbid: string; name: string; country?: string; type?: string; disambiguation?: string; begin?: string; end?: string }
 export type ArtistClarification = { mention: string; candidates: ArtistChoice[]; reason?: string }
 
+export function minimumCandidateCount(size: 16 | 32) {
+  return size + size / 2
+}
+
 export function deriveCandidateSelection(
   orderedItems: CandidateItem[],
   excludedIds: ReadonlySet<string>,

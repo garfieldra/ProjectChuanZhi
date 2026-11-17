@@ -58,7 +58,18 @@ public class ConversationApplicationService {
   public QueuedTurn enqueue(UUID id, UUID guestId, UUID clientMessageId, String content) {return enqueue(id,guestId,clientMessageId,content,List.of());}
 
   @Transactional
-  public QueuedTurn enqueue(UUID id,UUID guestId,UUID clientMessageId,String content,List<UUID> imageIds) {
+  public QueuedTurn enqueue(UUID id, UUID guestId, UUID clientMessageId, String content, List<UUID> imageIds) {
+    return enqueue(id, guestId, clientMessageId, content, imageIds, null);
+  }
+
+  @Transactional
+  public QueuedTurn enqueue(UUID id, UUID guestId, UUID clientMessageId, String content, List<UUID> imageIds, Integer candidateSize) {
+    if (candidateSize != null && (candidateSize != 16 && candidateSize != 32)) {
+      throw new IllegalArgumentException("世界杯规模只能是 16 或 32 首");
+    }
+    if (candidateSize != null && (content.isBlank() || content.length() < 3 || content.length() > 1_000)) {
+      throw new IllegalArgumentException("请用 3 至 1000 个字符描述世界杯的艺人或偏好");
+    }
     imageIds=com.soundseek.attachments.AttachmentIds.validate(content,imageIds);
     var c=conversations.findLockedOwned(id,guestId,ConversationStatus.DELETED).orElseThrow(NoSuchElementException::new);
     var replay = messages.findByConversationIdAndClientMessageId(id, clientMessageId);
@@ -72,7 +83,8 @@ public class ConversationApplicationService {
     if("新的音乐探索".equals(c.getTitle()))c.rename(content.isBlank()?"图片对话":content.substring(0,Math.min(36,content.length())));c.touch();
     var runId=UUID.randomUUID();messages.save(ConversationMessage.run(id,runId,next+1));
     var transcript=messages.findByConversationIdOrderBySequenceNumberAsc(id);
-    var body=agentBody(runId,id,guestId,content,c.getSummary(),activeTextHistory(c,transcript),recentCards(transcript,6),null,null);
+    var action = candidateSize == null ? null : "build_candidate_pool";
+    var body=agentBody(runId,id,guestId,content,c.getSummary(),activeTextHistory(c,transcript),recentCards(transcript,6),action,candidateSize);
     body.putAll(memoryPlan(c, transcript, false).agentFields());
     try{var payload=json.writeValueAsString(Map.of("runId",runId,"runType","CONVERSATION","input",body));agentRuns.createQueued(runId,guestId,id,AgentRunType.CONVERSATION,json.writeValueAsString(body));agentRuns.appendEvent(runId,AgentRunEventType.PROGRESS,"{\"phase\":\"queued\",\"message\":\"请求已进入 Agent 队列\"}");outbox.save(AsyncOutboxEvent.pendingAgentRun(runId,payload,runId.toString()));}
     catch(Exception e){throw new IllegalStateException("AGENT_RUN_ENQUEUE_FAILED",e);}

@@ -29,7 +29,7 @@ def main() -> None:
     request_id = uuid.uuid4()
     body = json.dumps({
         "requestId": str(request_id), "guestId": "knowledge-integration-demo",
-        "size": args.size, "candidateCount": args.size * 2,
+        "size": args.size, "candidateCount": args.size + args.size // 2,
         "preferenceText": args.preference, "seedArtistIds": [], "excludeRecordingIds": [],
     }, ensure_ascii=False).encode("utf-8")
     request = Request(

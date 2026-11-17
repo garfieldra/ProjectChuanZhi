@@ -47,13 +47,23 @@ class MusicCatalogTool:
             response.raise_for_status()
             return response.json()["items"]
 
-    async def discover_artist_recordings(self, artists: list[dict], per_artist_limit: int = 32) -> list[dict]:
+    async def selected_artists(self, artist_ids: list[UUID]) -> list[dict]:
+        async with httpx.AsyncClient(timeout=12) as client:
+            response = await client.post(
+                f"{self.base_url}/internal/v1/music-catalog/artists/selected",
+                json={"ids": [str(artist_id) for artist_id in artist_ids]},
+                headers={"Authorization": f"Bearer {self.token}"},
+            )
+            response.raise_for_status()
+            return response.json()["items"]
+
+    async def discover_artist_recordings(self, artists: list[dict], per_artist_limit: int | None = 32) -> list[dict]:
         if not artists:
             return []
-        async with httpx.AsyncClient(timeout=150) as client:
+        async with httpx.AsyncClient(timeout=750 if per_artist_limit is None else 150) as client:
             response = await client.post(
                 f"{self.base_url}/internal/v1/music-catalog/musicbrainz/discover-artists-and-import",
-                json={"artists": artists[:8], "perArtistLimit": per_artist_limit},
+                json={"artists": artists, "perArtistLimit": per_artist_limit, "completeCatalog": per_artist_limit is None},
                 headers={"Authorization": f"Bearer {self.token}"},
             )
             response.raise_for_status()

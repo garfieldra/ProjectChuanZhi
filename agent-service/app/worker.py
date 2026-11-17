@@ -24,7 +24,7 @@ _PUBLIC_TOOLS = {
     "understand_preference": ("偏好理解子任务", "subagent"),
     "resolve_named_entities": ("艺人身份解析", "tool"),
     "search_catalog": ("规范歌曲目录", "tool"),
-    "expand_artist_catalog": ("艺人作品扩展", "tool"),
+    "expand_artist_catalog": ("艺人目录读取", "tool"),
     "search_web": ("网络音乐搜索", "tool"),
     "research_musicbrainz": ("MusicBrainz 作品关系研究", "tool"),
     "search_wikimedia": ("Wikimedia 百科研究", "tool"),
